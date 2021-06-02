@@ -1,0 +1,19 @@
+{
+    "twitch": {
+        "client_id": "YOUR_CLIENT_ID",
+        "client_secret": "YOUR_CLIENT_SECRET"
+        "oauth_key": "YOUR_OAUTH_KEY" //DISABLE ADS IF YOUR OAUTH KEY HAS TURBO & NOT USING STREAMLINK.
+    },
+    "vod_directory": "YOUR_VOD_DIRECTORY", //FULL PATH TO DIRECTORY
+    "channels": [ //CHANNELS YOU WANT TO RECORD
+        "pokelawls", 
+        "sodapoppin",
+    ],
+    "twitch_app": { //CAN LEAVE EMPTY, IT WILL GENERATE ON LAUNCH.
+        
+    },
+    "drive": { //CAN BE RETRIEVED FROM GOOGLE PLAYGROUND OAUTH USING OWN CLIENT_ID & CLIENT_SECRET.
+        "refresh_token": "",
+        "access_token": ""
+    }
+}
