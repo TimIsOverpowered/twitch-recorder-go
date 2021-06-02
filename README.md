@@ -38,6 +38,19 @@ Create `config.json` file (use -config to specify the path to the config file)
  "drive": {
     "refresh_token": "XXXXXXXXXX",
     "access_token": "XXXXXXXXXX"
+ },
+ "google": {
+  "client_id": "XXXXXXXXXX",
+  "client_secret": "XXXXXXXXXX",
+  "scopes": [
+   "https://www.googleapis.com/auth/drive",
+   "https://www.googleapis.com/auth/drive.appdata",
+   "https://www.googleapis.com/auth/drive.file",
+   "https://www.googleapis.com/auth/drive.metadata"
+  ],
+  "endpoint": {
+   "token_url": "https://oauth2.googleapis.com/token"
+  }
  }
 }
 ```

@@ -15,5 +15,18 @@
     "drive": { //CAN BE RETRIEVED FROM GOOGLE PLAYGROUND OAUTH USING OWN CLIENT_ID & CLIENT_SECRET.
         "refresh_token": "",
         "access_token": ""
+    },
+    "google": { //RETRIEVE THESE FROM GOOGLE API CONSOLE
+        "client_id": "",
+        "client_secret": "",
+        "scopes": [
+            "https://www.googleapis.com/auth/drive",
+            "https://www.googleapis.com/auth/drive.appdata",
+            "https://www.googleapis.com/auth/drive.file",
+            "https://www.googleapis.com/auth/drive.metadata"
+        ],
+    "endpoint": {
+        "token_url": "https://oauth2.googleapis.com/token"
     }
+ }
 }
