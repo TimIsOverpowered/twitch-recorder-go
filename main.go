@@ -29,7 +29,6 @@ import (
 )
 
 const (
-	ConfigPath        = "./config.json"
 	TWITCH_API_BASE   = "https://api.twitch.tv/helix"
 	TWITCH_ID_API     = "https://id.twitch.tv"
 	TWITCH_GQL_API    = "https://gql.twitch.tv/gql"
@@ -57,6 +56,7 @@ type Config struct {
 var config *Config
 var use_ffmpeg bool
 var upload_to_drive bool
+var cfgPath string
 
 type TwitchToken struct {
 	AccessToken string `json:"access_token"`
@@ -65,14 +65,16 @@ type TwitchToken struct {
 }
 
 func main() {
-	cfgPath, err := ParseFlags()
+	configPath, err := ParseFlags()
 	if err != nil {
 		log.Fatal(err)
 	}
-	config, err = NewConfig(cfgPath)
+	config, err = NewConfig(configPath)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	cfgPath = configPath
 
 	//Check if APP Access token has expired.. If so, refresh it.
 	tokenExpired := checkAccessToken()
@@ -102,10 +104,10 @@ func NewConfig(configPath string) (*Config, error) {
 
 	d, err := ioutil.ReadFile(configPath)
 	if err != nil {
-		log.Fatalf("unable to read config %s", err)
+		log.Fatalf("unable to read config %v", err)
 	}
 	if err := json.Unmarshal(d, &config); err != nil {
-		log.Fatalf("unable to read config %s", err)
+		log.Fatalf("unable to read config %v", err)
 	}
 
 	return config, nil
@@ -149,12 +151,12 @@ func fileExists(path string) bool {
 }
 
 func Interval(channel string) {
-	d, err := ioutil.ReadFile(ConfigPath)
+	d, err := ioutil.ReadFile(cfgPath)
 	if err != nil {
-		log.Fatalf("unable to read twitch token config %s", err)
+		log.Fatalf("unable to read config %v", err)
 	}
 	if err := json.Unmarshal(d, &config); err != nil {
-		log.Fatalf("unable to read twitch token config %s", err)
+		log.Fatalf("unable to read config %v", err)
 	}
 
 	//Check if APP Access token has expired.. If so, refresh it.
@@ -276,7 +278,7 @@ func refreshAccessToken() error {
 			return err
 		}
 
-		err = ioutil.WriteFile(ConfigPath, d, 0777)
+		err = ioutil.WriteFile(cfgPath, d, 0777)
 		return err
 	}
 }
@@ -559,7 +561,7 @@ func getClient(c *oauth2.Config) *http.Client {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		err = ioutil.WriteFile(ConfigPath, d, 0777)
+		err = ioutil.WriteFile(cfgPath, d, 0777)
 		if err != nil {
 			log.Fatalln(err)
 		}
