@@ -51,6 +51,14 @@ type Config struct {
 		Access_Token  string `json:"access_token"`
 	} `json:"drive"`
 	ArchiveApiKey string `json:"archive_api_key"`
+	Google        struct {
+		ClientId     string   `json:"client_id"`
+		ClientSecret string   `json:"client_secret"`
+		Scopes       []string `json:"scopes"`
+		Endpoint     struct {
+			TokenURL string `json:"token_url"`
+		} `json:"endpoint"`
+	} `json:"google"`
 }
 
 var config *Config
@@ -172,7 +180,7 @@ func Interval(channel string) {
 
 	Check(channel)
 
-	time.AfterFunc(5*time.Second, func() {
+	time.AfterFunc(10*time.Second, func() {
 		Interval(channel)
 	})
 }
@@ -375,6 +383,10 @@ func record(stream *Streams, channel string) error {
 		//upload to gdrive
 		ctx := context.Background()
 		var googleConfig oauth2.Config
+		googleConfig.ClientID = config.Google.ClientId
+		googleConfig.ClientSecret = config.Google.ClientSecret
+		googleConfig.Endpoint.TokenURL = config.Google.Endpoint.TokenURL
+		googleConfig.Scopes = config.Google.Scopes
 		client := getClient(&googleConfig)
 
 		srv, err := drive.NewService(ctx, option.WithHTTPClient(client))
@@ -463,6 +475,9 @@ func record(stream *Streams, channel string) error {
 		if err != nil {
 			log.Printf("[%s] %v", channel, err)
 		}
+
+		//To avoid getting cached API responnse and replacing mp4..
+		time.Sleep(60 * time.Second)
 	}
 
 	return nil
@@ -555,6 +570,7 @@ func getClient(c *oauth2.Config) *http.Client {
 		log.Fatalln(err)
 	}
 	if newToken.AccessToken != tok.AccessToken {
+		log.Println("Saving new drive tokens..")
 		config.Drive.Access_Token = newToken.AccessToken
 		config.Drive.Refresh_Token = newToken.RefreshToken
 		d, err := json.MarshalIndent(config, "", " ")
