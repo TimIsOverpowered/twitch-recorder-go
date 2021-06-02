@@ -342,7 +342,7 @@ func record(stream *Streams, channel string) error {
 	if !fileExists(path) {
 		os.MkdirAll(path, 0777)
 	}
-	fileName := stream.StreamsData[0].Id + ".mkv"
+	fileName := stream.StreamsData[0].Id + ".mp4"
 
 	if fileExists(path + fileName) {
 		os.Remove(path + fileName)
@@ -363,8 +363,8 @@ func record(stream *Streams, channel string) error {
 			log.Println(err)
 		}
 
-		log.Printf("[%s] Executing ffmpeg: %s", channel, "ffmpeg -y -i "+m3u8+" -c copy -copyts -start_at_zero -f matroska "+path+fileName)
-		cmd := exec.Command("ffmpeg", "-y", "-i", m3u8, "-c", "copy", "-copyts", "-start_at_zero", "-f", "matroska", path+fileName)
+		log.Printf("[%s] Executing ffmpeg: %s", channel, "ffmpeg -y -i "+m3u8+" -c copy -copyts -start_at_zero -bsf:a aac_adtstoasc -f mp4 "+path+fileName)
+		cmd := exec.Command("ffmpeg", "-y", "-i", m3u8, "-c", "copy", "-copyts", "-start_at_zero", "-bsf:a", "aac_adtstoasc", "-f", "mp4", path+fileName)
 		cmd.Stdout = os.Stdout
 		cmd.Run()
 		log.Printf("[%s] Finished downloading.. Saved at: %s", channel, path+fileName)
@@ -433,7 +433,7 @@ func record(stream *Streams, channel string) error {
 			streamIdFolder = res.Id
 		}
 
-		//Upload MKV to Drive
+		//Upload MP4 to Drive
 		log.Printf("[%s] Uploading video", channel)
 		f, err := os.Open(path + fileName)
 		if err != nil {
