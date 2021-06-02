@@ -35,6 +35,7 @@ const (
 	TWITCH_GQL_API    = "https://gql.twitch.tv/gql"
 	TWITCH_CLIENT_ID  = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 	TWITCH_USHER_M3U8 = "https://usher.ttvnw.net"
+	ARCHIVE_API       = "https://archive.overpowered.tv"
 )
 
 type Config struct {
@@ -50,6 +51,7 @@ type Config struct {
 		Refresh_Token string `json:"refresh_token"`
 		Access_Token  string `json:"access_token"`
 	} `json:"drive"`
+	ArchiveApiKey string `json:"archive_api_key"`
 }
 
 var config *Config
@@ -453,8 +455,36 @@ func record(stream *Streams, channel string) error {
 			log.Fatalf("[%s] %v", channel, err)
 		}
 		log.Printf("[%s] Uploaded %s Drive Id: %s", channel, res.Name, res.Id)
+
+		//post to api
+		err = postToApi(channel, stream.StreamsData[0].Id, res.Id)
+		if err != nil {
+			log.Printf("[%s] %v", channel, err)
+		}
 	}
 
+	return nil
+}
+
+func postToApi(channel string, streamId string, driveId string) error {
+	log.Printf("[%s] Posting to API", channel)
+	client := resty.New()
+
+	body := []byte(fmt.Sprintf(`{
+        driveId: "%s",
+		streamId: "%s"
+	}`, driveId, streamId))
+
+	resp, _ := client.R().
+		SetHeader("Accept", "application/json").
+		SetAuthToken(config.ArchiveApiKey).
+		SetBody(body).
+		Post(ARCHIVE_API + "/" + channel + "/v2/" + "live")
+
+	if resp.StatusCode() != 200 {
+		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
+		return errors.New("Something went wrong posting to API")
+	}
 	return nil
 }
 
