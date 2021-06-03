@@ -182,7 +182,7 @@ func Interval(channel string) {
 
 	Check(channel)
 
-	time.AfterFunc(10*time.Second, func() {
+	time.AfterFunc(4*time.Second, func() {
 		Interval(channel)
 	})
 }
