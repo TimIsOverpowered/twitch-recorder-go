@@ -47,8 +47,10 @@ type Config struct {
 	Channels      []string `json:"channels"`
 	TwitchToken   `json:"twitch_app"`
 	Drive         struct {
-		Refresh_Token string `json:"refresh_token"`
-		Access_Token  string `json:"access_token"`
+		Refresh_Token string    `json:"refresh_token"`
+		Access_Token  string    `json:"access_token"`
+		TokenType     string    `json:"token_type"`
+		Expiry        time.Time `json:"expiry"`
 	} `json:"drive"`
 	ArchiveApiKey string `json:"archive_api_key"`
 	Google        struct {
@@ -564,6 +566,8 @@ func getClient(c *oauth2.Config) *http.Client {
 	var tok oauth2.Token
 	tok.AccessToken = config.Drive.Access_Token
 	tok.RefreshToken = config.Drive.Refresh_Token
+	tok.TokenType = config.Drive.TokenType
+	tok.Expiry = config.Drive.Expiry
 	tokenSource := c.TokenSource(oauth2.NoContext, &tok)
 	newToken, err := tokenSource.Token()
 	if err != nil {
@@ -573,6 +577,8 @@ func getClient(c *oauth2.Config) *http.Client {
 		log.Println("Saving new drive tokens..")
 		config.Drive.Access_Token = newToken.AccessToken
 		config.Drive.Refresh_Token = newToken.RefreshToken
+		config.Drive.TokenType = newToken.TokenType
+		config.Drive.Expiry = newToken.Expiry
 		d, err := json.MarshalIndent(config, "", " ")
 		if err != nil {
 			log.Fatalln(err)
