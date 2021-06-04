@@ -469,10 +469,10 @@ func record(stream *Streams, channel string) error {
 			log.Fatalf("[%s] %v", channel, err)
 		}
 		log.Printf("[%s] Uploaded %s Drive Id: %s", channel, res.Name, res.Id)
-
-		//To avoid getting cached API responnse and replacing mp4..
-		time.Sleep(60 * time.Second)
 	}
+
+	//To avoid getting cached API responnse and replacing mp4..
+	time.Sleep(60 * time.Second)
 
 	return nil
 }
