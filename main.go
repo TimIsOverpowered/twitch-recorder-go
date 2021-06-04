@@ -477,10 +477,9 @@ func record(stream *Streams, channel string) error {
 		if err != nil {
 			log.Printf("[%s] %v", channel, err)
 		}
-
-		//To avoid getting cached API responnse and replacing mp4..
-		time.Sleep(60 * time.Second)
 	}
+	//To avoid getting cached API responnse and replacing mp4..
+	time.Sleep(60 * time.Second)
 
 	return nil
 }
@@ -489,19 +488,18 @@ func postToApi(channel string, streamId string, driveId string) error {
 	log.Printf("[%s] Posting to API", channel)
 	client := resty.New()
 
-	body := []byte(fmt.Sprintf(`{
-        driveId: "%s",
-		streamId: "%s"
-	}`, driveId, streamId))
+	body := []byte(fmt.Sprintf(`{"driveId":"%s","streamId":"%s"}`, driveId, streamId))
 
 	resp, _ := client.R().
 		SetHeader("Accept", "application/json").
-		SetAuthToken(config.ArchiveApiKey).
+		SetHeader("Content-Type", "application/json").
+		SetHeader("Authorization", "Bearer "+config.ArchiveApiKey).
 		SetBody(body).
 		Post(ARCHIVE_API + "/" + channel + "/v2/" + "live")
 
 	if resp.StatusCode() != 200 {
 		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
+		log.Printf(string(resp.Body()))
 		return errors.New("Something went wrong posting to API")
 	}
 	return nil
