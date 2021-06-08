@@ -385,6 +385,10 @@ func record(m3u8 string, channel string) error {
 		log.Println(err)
 	}
 
+	if len(stream.StreamsData) == 0 {
+		return errors.New(channel + "'s stream object not found..")
+	}
+
 	new_fileName := stream.StreamsData[0].Id + ".mp4"
 	e := os.Rename(path+fileName, path+new_fileName)
 	if e != nil {
