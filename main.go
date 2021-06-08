@@ -104,7 +104,8 @@ func main() {
 			log.Printf("%s does not exist", channel)
 			continue
 		}
-		go Interval(channel)
+		tokenSig := getLiveTokenSig(channel)
+		go Interval(channel, tokenSig)
 	}
 	wg.Wait()
 }
@@ -160,7 +161,11 @@ func fileExists(path string) bool {
 	}
 }
 
-func Interval(channel string) {
+type Value struct {
+	Expires int64 `json:"expires"`
+}
+
+func Interval(channel string, token *TokenSig) {
 	d, err := ioutil.ReadFile(cfgPath)
 	if err != nil {
 		log.Fatalf("unable to read config %v", err)
@@ -180,10 +185,23 @@ func Interval(channel string) {
 		}
 	}
 
-	Check(channel)
+	var value *Value
 
-	time.AfterFunc(4*time.Second, func() {
-		Interval(channel)
+	if err := json.Unmarshal([]byte(token.Data.Token.Value), &value); err != nil {
+		log.Fatalf("Something went wrong trying to get token sig expiration.. %v", err)
+	}
+
+	log.Println(time.Now().Unix())
+	log.Println(value.Expires)
+	if time.Now().Unix() >= value.Expires {
+		log.Printf("[%s] Live Token Sig Expired...", channel)
+		token = getLiveTokenSig(channel)
+	}
+
+	Check(channel, token)
+
+	time.AfterFunc(6*time.Second, func() {
+		Interval(channel, token)
 	})
 }
 
@@ -222,23 +240,13 @@ func checkIfUserExists(channel string) bool {
 	}
 }
 
-func Check(channel string) {
-	streamObject, err := getStreamObject(channel)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	live := CheckIfLive(streamObject, channel)
-
+func Check(channel string, token *TokenSig) {
+	m3u8, live := CheckIfLive(token, channel)
 	if live {
-		log.Printf("[%s] live", channel)
-		err := record(streamObject, channel)
+		err := record(m3u8, channel)
 		if err != nil {
 			log.Println(err)
 		}
-	} else {
-		log.Printf("[%s] not live", channel)
 	}
 }
 
@@ -329,30 +337,31 @@ func getStreamObject(channel string) (*Streams, error) {
 	}
 }
 
-func CheckIfLive(stream *Streams, channel string) bool {
+func CheckIfLive(token *TokenSig, channel string) (string, bool) {
 	log.Printf("[%s] Checking if live", channel)
 
-	if len(stream.StreamsData) == 0 {
-		return false
-	} else {
-		return true
+	m3u8, err := getLiveM3u8(channel, token)
+	if err != nil {
+		log.Printf("[%s] %v", channel, err)
+		return "", false
 	}
+
+	return m3u8, true
 }
 
-func record(stream *Streams, channel string) error {
-	loc, _ := time.LoadLocation("America/Chicago")
-	now := time.Now().In(loc)
-	log.Printf("[%s] Recording %s Stream Id: %s", channel, now.Format("2006-01-02 15:04:05"), stream.StreamsData[0].Id)
+func record(m3u8 string, channel string) error {
+	date := time.Now().Format("01-02-2006")
+	log.Printf("[%s] is live. %s", channel, date)
 	var path string
 	if runtime.GOOS == "windows" {
-		path = config.Vod_directory + "\\" + channel + "\\" + stream.StreamsData[0].Id + "\\"
+		path = config.Vod_directory + "\\" + channel + "\\"
 	} else {
-		path = config.Vod_directory + "/" + channel + "/" + stream.StreamsData[0].Id + "/"
+		path = config.Vod_directory + "/" + channel + "/"
 	}
 	if !fileExists(path) {
 		os.MkdirAll(path, 0777)
 	}
-	fileName := stream.StreamsData[0].Id + ".mp4"
+	fileName := date + ".mp4"
 
 	if fileExists(path + fileName) {
 		os.Remove(path + fileName)
@@ -364,15 +373,8 @@ func record(stream *Streams, channel string) error {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Run()
-		return nil
 	} else {
 		//use ffmpeg
-		tokenSig := getLiveTokenSig(channel)
-		m3u8, err := getLiveM3u8(channel, tokenSig)
-		if err != nil {
-			log.Println(err)
-		}
-
 		log.Printf("[%s] Executing ffmpeg: %s", channel, "ffmpeg -y -i "+m3u8+" -c copy -copyts -start_at_zero -bsf:a aac_adtstoasc -f mp4 "+path+fileName)
 		cmd := exec.Command("ffmpeg", "-y", "-i", m3u8, "-c", "copy", "-copyts", "-start_at_zero", "-bsf:a", "aac_adtstoasc", "-f", "mp4", path+fileName)
 		cmd.Stdout = os.Stdout
@@ -380,7 +382,21 @@ func record(stream *Streams, channel string) error {
 		log.Printf("[%s] Finished downloading.. Saved at: %s", channel, path+fileName)
 	}
 
+	stream, err := getStreamObject(channel)
+	if err != nil {
+		log.Println(err)
+	}
+
+	new_fileName := stream.StreamsData[0].Id + ".mp4"
+	e := os.Rename(path+fileName, path+new_fileName)
+	if e != nil {
+		log.Fatal(e)
+	}
+
 	if upload_to_drive {
+		if !fileExists(path + fileName) {
+			return errors.New("File does not exist.. do not upload")
+		}
 		log.Printf("[%s] Uploading to drive..", channel)
 		//upload to gdrive
 		ctx := context.Background()
@@ -449,9 +465,9 @@ func record(stream *Streams, channel string) error {
 
 		//Upload MP4 to Drive
 		log.Printf("[%s] Uploading video", channel)
-		f, err := os.Open(path + fileName)
+		f, err := os.Open(path + new_fileName)
 		if err != nil {
-			log.Fatalf("[%s] error opening %q: %v", channel, path+fileName, err)
+			log.Fatalf("[%s] error opening %q: %v", channel, path+new_fileName, err)
 		}
 		defer f.Close()
 		// Grab file info
@@ -466,7 +482,7 @@ func record(stream *Streams, channel string) error {
 			fmt.Printf("Uploaded at %s, %s/%s\r", getRate(current), Comma(current), Comma(total))
 		}
 
-		res, err := srv.Files.Create(&drive.File{Name: fileName, Parents: []string{streamIdFolder}}).ResumableMedia(context.Background(), f, inputInfo.Size(), mime.TypeByExtension(filepath.Ext(fileName))).ProgressUpdater(showProgress).Do()
+		res, err := srv.Files.Create(&drive.File{Name: new_fileName, Parents: []string{streamIdFolder}}).ResumableMedia(context.Background(), f, inputInfo.Size(), mime.TypeByExtension(filepath.Ext(new_fileName))).ProgressUpdater(showProgress).Do()
 		if err != nil {
 			log.Fatalf("[%s] %v", channel, err)
 		}
@@ -476,10 +492,9 @@ func record(stream *Streams, channel string) error {
 		err = postToApi(channel, stream.StreamsData[0].Id, res.Id)
 		if err != nil {
 			log.Printf("[%s] %v", channel, err)
+			os.RemoveAll(path)
 		}
 	}
-	//To avoid getting cached API responnse and replacing mp4..
-	time.Sleep(60 * time.Second)
 
 	return nil
 }
@@ -668,8 +683,10 @@ func getLiveM3u8(channel string, tokenSig *TokenSig) (string, error) {
 		Get(TWITCH_USHER_M3U8 + "/api/channel/hls/" + channel + ".m3u8?allow_source=true&p=" + strconv.Itoa(rand.Intn(10000000-1000000)+1000000) + "&player=twitchweb&playlist_include_framerate=true&allow_spectre=true&sig=" + tokenSig.Data.Token.Signature + "&token=" + tokenSig.Data.Token.Value)
 
 	if resp.StatusCode() != 200 {
-		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
-		log.Printf(string(resp.Body()))
+		if resp.StatusCode() != 404 {
+			log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
+		}
+		return "", errors.New("is not live..")
 	}
 
 	p, listType, err := m3u8.DecodeFrom(bytes.NewReader(resp.Body()), true)
