@@ -390,7 +390,7 @@ func record(m3u8 string, channel string) error {
 	}
 
 	if upload_to_drive {
-		if !fileExists(path + fileName) {
+		if !fileExists(path + new_fileName) {
 			return errors.New("File does not exist.. do not upload")
 		}
 		log.Printf("[%s] Uploading to drive..", channel)
