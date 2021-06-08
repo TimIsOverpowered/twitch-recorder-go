@@ -191,8 +191,6 @@ func Interval(channel string, token *TokenSig) {
 		log.Fatalf("Something went wrong trying to get token sig expiration.. %v", err)
 	}
 
-	log.Println(time.Now().Unix())
-	log.Println(value.Expires)
 	if time.Now().Unix() >= value.Expires {
 		log.Printf("[%s] Live Token Sig Expired...", channel)
 		token = getLiveTokenSig(channel)
