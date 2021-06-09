@@ -364,11 +364,10 @@ func record(m3u8 string, channel string) error {
 	}
 
 	var stream *Streams
-
-	ch := make(chan int)
+	var err error
 
 	go func() {
-		stream, err := getStreamObject(channel)
+		stream, err = getStreamObject(channel)
 		if err != nil {
 			log.Println(err)
 		}
@@ -377,9 +376,8 @@ func record(m3u8 string, channel string) error {
 			if err != nil {
 				log.Println(err)
 			}
-			time.Sleep(time.Second)
+			time.Sleep(5 * time.Second)
 		}
-		ch <- 0
 	}()
 
 	if !use_ffmpeg {
@@ -396,8 +394,6 @@ func record(m3u8 string, channel string) error {
 		cmd.Run()
 		log.Printf("[%s] Finished downloading.. Saved at: %s", channel, path+fileName)
 	}
-
-	<-ch
 
 	if len(stream.StreamsData) == 0 {
 		return errors.New(channel + "'s stream object not found..")
