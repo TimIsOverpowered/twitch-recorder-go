@@ -517,7 +517,7 @@ func postToApi(channel string, streamId string, driveId string, path string) err
 	log.Printf("[%s] Posting to API", channel)
 	client := resty.New()
 
-	body := []byte(fmt.Sprintf(`{"driveId":"%s","streamId":"%s"}`, driveId, streamId))
+	body := []byte(fmt.Sprintf(`{"driveId":"%s","streamId":"%s","path":"%s"}`, driveId, streamId, path))
 
 	resp, _ := client.R().
 		SetHeader("Accept", "application/json").
