@@ -365,6 +365,25 @@ func record(m3u8 string, channel string) error {
 		os.Remove(path + fileName)
 	}
 
+	var stream *Streams
+
+	ch := make(chan int)
+
+	go func() {
+		stream, err := getStreamObject(channel)
+		if err != nil {
+			log.Println(err)
+		}
+		for len(stream.StreamsData) == 0 {
+			stream, err = getStreamObject(channel)
+			if err != nil {
+				log.Println(err)
+			}
+			time.Sleep(time.Second)
+		}
+		ch <- 0
+	}()
+
 	if !use_ffmpeg {
 		//use streamlink
 		cmd := exec.Command("streamlink", "-o", path+fileName, "twitch.tv/"+channel, "best", "--twitch-disable-hosting", "--twitch-disable-ads", "--twitch-disable-reruns")
@@ -380,10 +399,7 @@ func record(m3u8 string, channel string) error {
 		log.Printf("[%s] Finished downloading.. Saved at: %s", channel, path+fileName)
 	}
 
-	stream, err := getStreamObject(channel)
-	if err != nil {
-		log.Println(err)
-	}
+	<-ch
 
 	if len(stream.StreamsData) == 0 {
 		return errors.New(channel + "'s stream object not found..")
@@ -491,7 +507,7 @@ func record(m3u8 string, channel string) error {
 		log.Printf("[%s] Uploaded %s Drive Id: %s", channel, res.Name, res.Id)
 
 		//post to api
-		err = postToApi(channel, stream.StreamsData[0].Id, res.Id)
+		err = postToApi(channel, stream.StreamsData[0].Id, res.Id, path+new_fileName)
 		if err != nil {
 			log.Printf("[%s] %v", channel, err)
 			os.RemoveAll(path)
@@ -501,7 +517,7 @@ func record(m3u8 string, channel string) error {
 	return nil
 }
 
-func postToApi(channel string, streamId string, driveId string) error {
+func postToApi(channel string, streamId string, driveId string, path string) error {
 	log.Printf("[%s] Posting to API", channel)
 	client := resty.New()
 
