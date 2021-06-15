@@ -408,108 +408,118 @@ func record(m3u8 string, channel string) error {
 	}
 
 	if upload_to_drive {
-		if !fileExists(path + new_fileName) {
-			return errors.New("File does not exist.. do not upload")
-		}
-		log.Printf("[%s] Uploading to drive..", channel)
-		//upload to gdrive
-		ctx := context.Background()
-		var googleConfig oauth2.Config
-		googleConfig.ClientID = config.Google.ClientId
-		googleConfig.ClientSecret = config.Google.ClientSecret
-		googleConfig.Endpoint.TokenURL = config.Google.Endpoint.TokenURL
-		googleConfig.Scopes = config.Google.Scopes
-		client := getClient(&googleConfig)
-
-		srv, err := drive.NewService(ctx, option.WithHTTPClient(client))
-		if err != nil {
-			log.Fatalf("[%s] %v", channel, err)
-		}
-
-		//Retrieve Folder Id using channel name.
-		nextPageToken := ""
-		fileList, err := getDriveFileList(srv, nextPageToken)
-		if err != nil {
-			log.Fatalf("[%s] %v", channel, err)
-		}
-		rootFolderId := ""
-		streamIdFolder := ""
-		for {
-			for _, file := range fileList.Files {
-				if strings.EqualFold(file.Name, channel) {
-					log.Printf("[%s] Found root folder %s", channel, file.Id)
-					rootFolderId = file.Id
-					continue
-				}
-				if strings.EqualFold(file.Name, stream.StreamsData[0].Id) {
-					log.Printf("[%s] Found stream id folder %s", channel, file.Id)
-					streamIdFolder = file.Id
-					continue
-				}
-				if len(rootFolderId) > 0 && len(streamIdFolder) > 0 {
-					break
-				}
+		go func() {
+			err := uploadToDrive(path, new_fileName, channel, stream)
+			if err != nil {
+				log.Printf("[%s] %v", channel, err)
 			}
-			nextPageToken = fileList.NextPageToken
-			fileList, err = getDriveFileList(srv, nextPageToken)
-			if fileList.NextPageToken == "" || (len(rootFolderId) > 0 && len(streamIdFolder) > 0) {
+		}()
+	}
+
+	return nil
+}
+
+func uploadToDrive(path string, fileName string, channel string, stream *Streams) error {
+	if !fileExists(path + fileName) {
+		return errors.New("File does not exist.. do not upload")
+	}
+	log.Printf("[%s] Uploading to drive..", channel)
+	//upload to gdrive
+	ctx := context.Background()
+	var googleConfig oauth2.Config
+	googleConfig.ClientID = config.Google.ClientId
+	googleConfig.ClientSecret = config.Google.ClientSecret
+	googleConfig.Endpoint.TokenURL = config.Google.Endpoint.TokenURL
+	googleConfig.Scopes = config.Google.Scopes
+	client := getClient(&googleConfig)
+
+	srv, err := drive.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		log.Fatalf("[%s] %v", channel, err)
+	}
+
+	//Retrieve Folder Id using channel name.
+	nextPageToken := ""
+	fileList, err := getDriveFileList(srv, nextPageToken)
+	if err != nil {
+		log.Fatalf("[%s] %v", channel, err)
+	}
+	rootFolderId := ""
+	streamIdFolder := ""
+	for {
+		for _, file := range fileList.Files {
+			if strings.EqualFold(file.Name, channel) {
+				log.Printf("[%s] Found root folder %s", channel, file.Id)
+				rootFolderId = file.Id
+				continue
+			}
+			if strings.EqualFold(file.Name, stream.StreamsData[0].Id) {
+				log.Printf("[%s] Found stream id folder %s", channel, file.Id)
+				streamIdFolder = file.Id
+				continue
+			}
+			if len(rootFolderId) > 0 && len(streamIdFolder) > 0 {
 				break
 			}
 		}
-
-		//Create root folder if it doesn't exist.
-		if len(rootFolderId) == 0 {
-			log.Printf("[%s] Creating root folder", channel)
-			res, err := srv.Files.Create(&drive.File{Name: channel, MimeType: "application/vnd.google-apps.folder"}).Do()
-			if err != nil {
-				log.Fatalf("[%s] %v", channel, err)
-			}
-			rootFolderId = res.Id
-		}
-
-		if len(streamIdFolder) == 0 {
-			//Create Stream Id Folder if it doesn't exist
-			log.Printf("[%s] Creating %s folder", channel, stream.StreamsData[0].Id)
-			res, err := srv.Files.Create(&drive.File{Name: stream.StreamsData[0].Id, MimeType: "application/vnd.google-apps.folder", Parents: []string{rootFolderId}}).Do()
-			if err != nil {
-				log.Fatalf("[%s] %v", channel, err)
-			}
-			streamIdFolder = res.Id
-		}
-
-		//Upload MP4 to Drive
-		log.Printf("[%s] Uploading video", channel)
-		f, err := os.Open(path + new_fileName)
-		if err != nil {
-			log.Fatalf("[%s] error opening %q: %v", channel, path+new_fileName, err)
-		}
-		defer f.Close()
-		// Grab file info
-		inputInfo, err := f.Stat()
-		if err != nil {
-			log.Fatalf("[%s] %v", channel, err)
-		}
-		getRate := MeasureTransferRate()
-
-		// progress call back
-		showProgress := func(current, total int64) {
-			fmt.Printf("Uploaded at %s, %s/%s\r", getRate(current), Comma(current), Comma(total))
-		}
-
-		res, err := srv.Files.Create(&drive.File{Name: new_fileName, Parents: []string{streamIdFolder}}).ResumableMedia(context.Background(), f, inputInfo.Size(), mime.TypeByExtension(filepath.Ext(new_fileName))).ProgressUpdater(showProgress).Do()
-		if err != nil {
-			log.Fatalf("[%s] %v", channel, err)
-		}
-		log.Printf("[%s] Uploaded %s Drive Id: %s", channel, res.Name, res.Id)
-
-		//post to api
-		err = postToApi(channel, stream.StreamsData[0].Id, res.Id, path+new_fileName)
-		if err != nil {
-			log.Printf("[%s] %v", channel, err)
-			os.RemoveAll(path)
+		nextPageToken = fileList.NextPageToken
+		fileList, err = getDriveFileList(srv, nextPageToken)
+		if fileList.NextPageToken == "" || (len(rootFolderId) > 0 && len(streamIdFolder) > 0) {
+			break
 		}
 	}
 
+	//Create root folder if it doesn't exist.
+	if len(rootFolderId) == 0 {
+		log.Printf("[%s] Creating root folder", channel)
+		res, err := srv.Files.Create(&drive.File{Name: channel, MimeType: "application/vnd.google-apps.folder"}).Do()
+		if err != nil {
+			log.Fatalf("[%s] %v", channel, err)
+		}
+		rootFolderId = res.Id
+	}
+
+	if len(streamIdFolder) == 0 {
+		//Create Stream Id Folder if it doesn't exist
+		log.Printf("[%s] Creating %s folder", channel, stream.StreamsData[0].Id)
+		res, err := srv.Files.Create(&drive.File{Name: stream.StreamsData[0].Id, MimeType: "application/vnd.google-apps.folder", Parents: []string{rootFolderId}}).Do()
+		if err != nil {
+			log.Fatalf("[%s] %v", channel, err)
+		}
+		streamIdFolder = res.Id
+	}
+
+	//Upload MP4 to Drive
+	log.Printf("[%s] Uploading video", channel)
+	f, err := os.Open(path + fileName)
+	if err != nil {
+		log.Fatalf("[%s] error opening %q: %v", channel, path+fileName, err)
+	}
+	defer f.Close()
+	// Grab file info
+	inputInfo, err := f.Stat()
+	if err != nil {
+		log.Fatalf("[%s] %v", channel, err)
+	}
+	getRate := MeasureTransferRate()
+
+	// progress call back
+	showProgress := func(current, total int64) {
+		fmt.Printf("Uploaded at %s, %s/%s\r", getRate(current), Comma(current), Comma(total))
+	}
+
+	res, err := srv.Files.Create(&drive.File{Name: fileName, Parents: []string{streamIdFolder}}).ResumableMedia(context.Background(), f, inputInfo.Size(), mime.TypeByExtension(filepath.Ext(fileName))).ProgressUpdater(showProgress).Do()
+	if err != nil {
+		log.Fatalf("[%s] %v", channel, err)
+	}
+	log.Printf("[%s] Uploaded %s Drive Id: %s", channel, res.Name, res.Id)
+
+	//post to api
+	err = postToApi(channel, stream.StreamsData[0].Id, res.Id, path+fileName)
+	if err != nil {
+		log.Printf("[%s] %v", channel, err)
+		os.RemoveAll(path)
+	}
 	return nil
 }
 
