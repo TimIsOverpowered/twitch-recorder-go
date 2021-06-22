@@ -84,17 +84,6 @@ func main() {
 
 	cfgPath = configPath
 
-	//Check if APP Access token has expired.. If so, refresh it.
-	tokenExpired := checkAccessToken()
-	if tokenExpired {
-		err := refreshAccessToken()
-		if err != nil {
-			log.Println("Client-Id or Client-Secret may be incorrect! Exiting..")
-			log.Fatalln(err)
-			return
-		}
-	}
-
 	var wg sync.WaitGroup
 	wg.Add(1)
 	for _, channel := range config.Channels {
@@ -172,17 +161,6 @@ func Interval(channel string, token *TokenSig) {
 		log.Fatalf("unable to read config %v", err)
 	}
 
-	//Check if APP Access token has expired.. If so, refresh it.
-	tokenExpired := checkAccessToken()
-	if tokenExpired {
-		err := refreshAccessToken()
-		if err != nil {
-			log.Println("Client-Id or Client-Secret may be incorrect! Exiting..")
-			log.Fatalln(err)
-			return
-		}
-	}
-
 	var value *Value
 
 	if err := json.Unmarshal([]byte(token.Data.Token.Value), &value); err != nil {
@@ -209,6 +187,17 @@ type User struct {
 }
 
 func checkIfUserExists(channel string) bool {
+	//Check if APP Access token has expired.. If so, refresh it.
+	tokenExpired := checkAccessToken()
+	if tokenExpired {
+		err := refreshAccessToken()
+		for err != nil {
+			time.Sleep(5 * time.Second)
+			err = refreshAccessToken()
+			log.Println("Client-Id or Client-Secret may be incorrect!")
+		}
+	}
+
 	log.Printf("[%s] Getting user object", channel)
 	client := resty.New()
 
@@ -311,6 +300,17 @@ type Streams struct {
 }
 
 func getStreamObject(channel string) (*Streams, error) {
+	//Check if APP Access token has expired.. If so, refresh it.
+	tokenExpired := checkAccessToken()
+	if tokenExpired {
+		err := refreshAccessToken()
+		for err != nil {
+			time.Sleep(5 * time.Second)
+			err = refreshAccessToken()
+			log.Println("Client-Id or Client-Secret may be incorrect!")
+		}
+	}
+
 	log.Printf("[%s] Getting stream object", channel)
 	client := resty.New()
 
