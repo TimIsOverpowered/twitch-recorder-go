@@ -401,6 +401,7 @@ func record(m3u8 string, channel string) error {
 		return errors.New(channel + "'s stream object not found..")
 	}
 
+	time.Sleep(3 * time.Second)
 	new_fileName := stream.StreamsData[0].Id + ".mp4"
 	e := os.Rename(path+fileName, path+new_fileName)
 	if e != nil {
@@ -518,7 +519,7 @@ func uploadToDrive(path string, fileName string, channel string, stream *Streams
 	err = postToApi(channel, stream.StreamsData[0].Id, res.Id, path+fileName)
 	if err != nil {
 		log.Printf("[%s] %v", channel, err)
-		os.RemoveAll(path)
+		os.Remove(path)
 	}
 	return nil
 }
