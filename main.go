@@ -519,7 +519,7 @@ func uploadToDrive(path string, fileName string, channel string, stream *Streams
 	err = postToApi(channel, stream.StreamsData[0].Id, res.Id, path+fileName)
 	if err != nil {
 		log.Printf("[%s] %v", channel, err)
-		os.Remove(path)
+		os.Remove(path + fileName)
 	}
 	return nil
 }
