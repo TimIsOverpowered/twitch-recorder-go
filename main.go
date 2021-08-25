@@ -480,28 +480,19 @@ func recordComments(channel string, vodId string, streamId string, retry_optiona
 			cursor := comments.Cursor
 			if lastOffset != comments.Comments[len(comments.Comments)-1].Content_offset_seconds {
 				log.Printf("[%s] Current Offset: %v", channel, comments.Comments[len(comments.Comments)-1].Content_offset_seconds)
-				//delete from array if comments already exist
-				initalIndex := 0
-				for i := 0; i < len(oldComments.Comments); i++ {
-					v := oldComments.Comments[i]
-					if v.Id == comments.Comments[0].Id {
-						initalIndex = i
-						break
-					}
-				}
 
-				for index, comment := range comments.Comments {
+				//only add to array if it doesn't exist in original array...
+				for _, comment := range comments.Comments {
 					commentExists := false
-
-					for i := initalIndex; i < len(oldComments.Comments); i++ {
+					for i := 0; i < len(oldComments.Comments); i++ {
 						v := oldComments.Comments[i]
 						if v.Id == comment.Id {
 							commentExists = true
 							break
 						}
 					}
-					if commentExists {
-						comments.Comments = append(comments.Comments[:index], comments.Comments[index+1:]...)
+					if !commentExists {
+						oldComments.Comments = append(oldComments.Comments, comment)
 					}
 				}
 
