@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -23,17 +24,23 @@ import (
 
 	"github.com/go-resty/resty/v2"
 	"github.com/grafov/m3u8"
+	"github.com/klauspost/compress/zstd"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
 )
 
 const (
-	TWITCH_API_BASE   = "https://api.twitch.tv/helix"
-	TWITCH_ID_API     = "https://id.twitch.tv"
-	TWITCH_GQL_API    = "https://gql.twitch.tv/gql"
-	TWITCH_CLIENT_ID  = "kimne78kx3ncx6brgo4mv6wki5h1ko"
-	TWITCH_USHER_M3U8 = "https://usher.ttvnw.net"
+	TWITCH_API_BASE     = "https://api.twitch.tv/helix"
+	TWITCH_ID_API       = "https://id.twitch.tv"
+	TWITCH_GQL_API      = "https://gql.twitch.tv/gql"
+	TWITCH_CLIENT_ID    = "kimne78kx3ncx6brgo4mv6wki5h1ko"
+	TWITCH_USHER_M3U8   = "https://usher.ttvnw.net"
+	TWITCH_COMMENTS_API = "https://api.twitch.tv/v5"
+	BTTV_API            = "https://api.betterttv.net/3"
+	BTTV_CDN            = "https://cdn.betterttv.net"
+	FFZ_API             = "https://api.frankerfacez.com/v1"
+	FFZ_CDN             = "https://cdn.frankerfacez.com"
 )
 
 type Config struct {
@@ -65,6 +72,7 @@ var config *Config
 var use_ffmpeg bool
 var upload_to_drive bool
 var cfgPath string
+var record_chat bool
 
 type TwitchToken struct {
 	AccessToken string `json:"access_token"`
@@ -73,6 +81,7 @@ type TwitchToken struct {
 }
 
 func main() {
+
 	configPath, err := ParseFlags()
 	if err != nil {
 		log.Fatal(err)
@@ -83,7 +92,6 @@ func main() {
 	}
 
 	cfgPath = configPath
-
 	var wg sync.WaitGroup
 	wg.Add(1)
 	for _, channel := range config.Channels {
@@ -91,7 +99,10 @@ func main() {
 			log.Printf("%s does not exist", channel)
 			continue
 		}
-		tokenSig := getLiveTokenSig(channel)
+		tokenSig, err := getLiveTokenSig(channel)
+		if err != nil {
+			log.Printf("[%s] %v", channel, err)
+		}
 		go Interval(channel, tokenSig)
 	}
 	wg.Wait()
@@ -115,6 +126,7 @@ func ParseFlags() (string, error) {
 	var configPath string
 
 	flag.BoolVar(&use_ffmpeg, "ffmpeg", false, "use ffmpeg custom logic to download instead of streamlink")
+	flag.BoolVar(&record_chat, "chat", false, "saves chat")
 	flag.BoolVar(&upload_to_drive, "drive", false, "upload to drive. make sure you supply refresh_token & access_token in config")
 	flag.StringVar(&configPath, "config", "./config.json", "path to config file")
 	flag.Parse()
@@ -143,7 +155,7 @@ func fileExists(path string) bool {
 	} else if os.IsNotExist(err) {
 		return false
 	} else {
-		log.Fatalln(err)
+		log.Printf("%v", err)
 		return false
 	}
 }
@@ -164,15 +176,20 @@ func Interval(channel string, token *TokenSig) {
 	var value *Value
 
 	if err := json.Unmarshal([]byte(token.Data.Token.Value), &value); err != nil {
-		log.Fatalf("Something went wrong trying to get token sig expiration.. %v", err)
+		log.Printf("[%s] Something went wrong trying to get token sig expiration.. %v", channel, err)
 	}
 
 	if time.Now().Unix() >= value.Expires {
 		log.Printf("[%s] Live Token Sig Expired...", channel)
-		token = getLiveTokenSig(channel)
+		token, err = getLiveTokenSig(channel)
+		if err != nil {
+			log.Printf("[%s] %v", channel, err)
+		}
 	}
 
-	Check(channel, token)
+	if err == nil {
+		Check(channel, token)
+	}
 
 	time.AfterFunc(6*time.Second, func() {
 		Interval(channel, token)
@@ -187,7 +204,58 @@ type User struct {
 }
 
 func checkIfUserExists(channel string) bool {
-	//Check if APP Access token has expired.. If so, refresh it.
+	user := getUserObject(channel)
+	if len(user.UserData) == 0 {
+		return false
+	} else {
+		return true
+	}
+}
+
+func Check(channel string, token *TokenSig) {
+	m3u8, live := CheckIfLive(token, channel)
+	if live {
+		if record_chat {
+			go func() {
+				stream, err := getStreamObject(channel)
+				if err != nil {
+					log.Printf("[%s] %v", channel, err)
+					return
+				}
+				for len(stream.StreamsData) == 0 {
+					stream, err = getStreamObject(channel)
+					if err != nil {
+						log.Printf("[%s] %v", channel, err)
+					}
+					time.Sleep(5 * time.Second)
+				}
+
+				vod_data, err := getVodObject(channel)
+				if err != nil {
+					log.Printf("[%s] %v", channel, err)
+					return
+				}
+
+				for vod_data.VodData[0].Stream_id != stream.StreamsData[0].Id {
+					time.Sleep(5 * time.Second)
+					vod_data, err = getVodObject(channel)
+					if err != nil {
+						log.Printf("[%s] %v", channel, err)
+						return
+					}
+				}
+				log.Printf("[%s] Recording %s chat..", channel, vod_data.VodData[0].Id)
+				recordComments(channel, vod_data.VodData[0].Id, stream.StreamsData[0].Id)
+			}()
+		}
+		err := record(m3u8, channel)
+		if err != nil {
+			log.Printf("[%s] %v", channel, err)
+		}
+	}
+}
+
+func getUserObject(channel string) *User {
 	tokenExpired := checkAccessToken()
 	if tokenExpired {
 		err := refreshAccessToken()
@@ -210,29 +278,430 @@ func checkIfUserExists(channel string) bool {
 	if resp.StatusCode() != 200 {
 		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
 		log.Printf(string(resp.Body()))
-		return false
 	}
 
 	var user User
 	if err := json.Unmarshal(resp.Body(), &user); err != nil {
-		log.Println(err)
+		log.Printf("[%s] %v", channel, err)
 	}
 
-	if len(user.UserData) == 0 {
-		return false
-	} else {
-		return true
-	}
+	return &user
 }
 
-func Check(channel string, token *TokenSig) {
-	m3u8, live := CheckIfLive(token, channel)
-	if live {
-		err := record(m3u8, channel)
-		if err != nil {
-			log.Println(err)
+type Vod struct {
+	VodData []struct {
+		Id            string `json:"id"`
+		Stream_id     string `json:"stream_id"`
+		User_id       string `json:"user_id"`
+		User_name     string `json:"user_login"`
+		Created_at    string `json:"created_at"`
+		Thumbnail_url string `json:"thumbnail_url"`
+	} `json:"data"`
+}
+
+func getVodObject(channel string) (*Vod, error) {
+	//Check if APP Access token has expired.. If so, refresh it.
+	tokenExpired := checkAccessToken()
+	if tokenExpired {
+		err := refreshAccessToken()
+		for err != nil {
+			time.Sleep(5 * time.Second)
+			err = refreshAccessToken()
+			log.Println("Client-Id or Client-Secret may be incorrect!")
 		}
 	}
+
+	user := getUserObject(channel)
+
+	log.Printf("[%s] Getting vod object", channel)
+	client := resty.New()
+
+	resp, _ := client.R().
+		SetHeader("Accept", "application/json").
+		SetAuthToken(config.TwitchToken.AccessToken).
+		SetHeader("Client-ID", config.Twitch.ClientId).
+		Get(TWITCH_API_BASE + "/videos/?user_id=" + user.UserData[0].User_id)
+
+	if resp.StatusCode() != 200 {
+		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
+	}
+
+	var vod Vod
+	err := json.Unmarshal(resp.Body(), &vod)
+	if err != nil {
+		return nil, err
+	}
+
+	return &vod, err
+}
+
+func zstdCompress(file []byte, channel string, vodId string) []byte {
+	log.Printf("[%s] starting zstd compress %s chat.json", channel, vodId)
+
+	var encoder, _ = zstd.NewWriter(nil)
+	return encoder.EncodeAll(file, make([]byte, 0, len(file)))
+}
+
+type FFZRoom struct {
+	Room struct {
+		Set int `json:"set"`
+	} `json:"room"`
+}
+
+//https://api.frankerfacez.com/v1/room/
+func getFFZEmotes(channel string) (*FFZSet, error) {
+	log.Printf("[%s] Getting FFZ Emotes", channel)
+	client := resty.New()
+
+	resp, _ := client.R().
+		SetHeader("Accept", "application/json").
+		Get(FFZ_API + "/room/" + strings.ToLower(channel))
+
+	if resp.StatusCode() != 200 {
+		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
+		return nil, errors.New(string(resp.Body()))
+	}
+
+	var room FFZRoom
+	err := json.Unmarshal(resp.Body(), &room)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, _ = client.R().
+		SetHeader("Accept", "application/json").
+		Get(FFZ_API + "/set/" + fmt.Sprintf("%v", room.Room.Set))
+
+	if resp.StatusCode() != 200 {
+		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
+		return nil, errors.New(string(resp.Body()))
+	}
+
+	var set FFZSet
+	err = json.Unmarshal(resp.Body(), &set)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, emote := range set.Set.Emotes {
+		resp, _ = client.R().
+			Get(FFZ_CDN + "/emote/" + fmt.Sprintf("%v", emote.Id) + "/1x")
+
+		var base64Encoding string
+		mimeType := http.DetectContentType(resp.Body())
+		switch mimeType {
+		case "image/jpeg":
+			base64Encoding += "data:image/jpeg;base64,"
+		case "image/png":
+			base64Encoding += "data:image/png;base64,"
+		case "image/gif":
+			base64Encoding += "data:image/gif;base64,"
+		}
+
+		base64Encoding += base64.StdEncoding.EncodeToString(resp.Body())
+		emote.Base64 = base64Encoding
+	}
+
+	return &set, nil
+}
+
+//https://api.betterttv.net/3/cached/users/twitch/
+func getBTTVEmotes(channel string) (*BTTV, error) {
+	log.Printf("[%s] Getting BTTV Emotes", channel)
+	twitchId := getUserObject(channel).UserData[0].User_id
+
+	client := resty.New()
+	resp, _ := client.R().
+		SetHeader("Accept", "application/json").
+		Get(BTTV_API + "/cached/users/twitch/" + twitchId)
+
+	if resp.StatusCode() != 200 {
+		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
+		return nil, errors.New(string(resp.Body()))
+	}
+
+	var bttv BTTV
+	err := json.Unmarshal(resp.Body(), &bttv)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, emote := range bttv.Emotes {
+		resp, _ = client.R().
+			Get(BTTV_CDN + "/emote/" + emote.Id + "/1x")
+
+		var base64Encoding string
+		mimeType := http.DetectContentType(resp.Body())
+		switch mimeType {
+		case "image/jpeg":
+			base64Encoding += "data:image/jpeg;base64,"
+		case "image/png":
+			base64Encoding += "data:image/png;base64,"
+		case "image/gif":
+			base64Encoding += "data:image/gif;base64,"
+		}
+
+		base64Encoding += base64.StdEncoding.EncodeToString(resp.Body())
+		bttv.Emotes[i].Base64 = base64Encoding
+	}
+
+	return &bttv, nil
+}
+
+func recordComments(channel string, vodId string, streamId string, retry_optional ...int) {
+	retry := 0
+	if len(retry_optional) > 0 {
+		retry = retry_optional[0]
+	}
+	log.Printf("[%s] Checking Comments.. retry: %v", channel, retry)
+
+	var path string
+	if runtime.GOOS == "windows" {
+		path = config.Vod_directory + "\\" + channel + "\\"
+	} else {
+		path = config.Vod_directory + "/" + channel + "/"
+	}
+	if !fileExists(path) {
+		os.MkdirAll(path, 0777)
+	}
+
+	fileName := vodId + ".json"
+	if fileExists(path + fileName) {
+		chatFile, _ := ioutil.ReadFile(path + fileName)
+		var oldComments VodComments
+		err := json.Unmarshal(chatFile, &oldComments)
+		if err != nil {
+			log.Printf("[%s] %v", channel, err)
+			return
+		}
+		lastOffset := oldComments.Comments[len(oldComments.Comments)-1].Content_offset_seconds
+		comments := fetchComments(vodId, fmt.Sprintf("%f", lastOffset))
+		if comments != nil {
+			cursor := comments.Cursor
+			if lastOffset != comments.Comments[len(comments.Comments)-1].Content_offset_seconds {
+				log.Printf("[%s] Current Offset: %v", channel, comments.Comments[len(comments.Comments)-1].Content_offset_seconds)
+				//delete from array if comments already exist
+				initalIndex := 0
+				for i := 0; i < len(oldComments.Comments); i++ {
+					v := oldComments.Comments[i]
+					if v.Id == comments.Comments[0].Id {
+						initalIndex = i
+						break
+					}
+				}
+
+				for index, comment := range comments.Comments {
+					commentExists := false
+
+					for i := initalIndex; i < len(oldComments.Comments); i++ {
+						v := oldComments.Comments[i]
+						if v.Id == comment.Id {
+							commentExists = true
+							break
+						}
+					}
+					if commentExists {
+						comments.Comments = append(comments.Comments[:index], comments.Comments[index+1:]...)
+					}
+				}
+
+				for len(cursor) != 0 {
+					time.Sleep(500 * time.Millisecond)
+					nextComments := fetchNextComments(vodId, cursor)
+					for nextComments == nil {
+						time.Sleep(500 * time.Millisecond)
+						nextComments = fetchNextComments(vodId, cursor)
+					}
+					cursor = nextComments.Cursor
+					oldComments.Comments = append(oldComments.Comments, nextComments.Comments...)
+					log.Printf("[%s] Current Offset: %v", channel, nextComments.Comments[len(nextComments.Comments)-1].Content_offset_seconds)
+				}
+				d, err := json.Marshal(oldComments)
+				if err != nil {
+					log.Printf("[%s] %v", channel, err)
+					return
+				}
+				err = ioutil.WriteFile(path+fileName, d, 0777)
+				retry = 0
+			} else {
+				retry = retry + 1
+			}
+		} else {
+			retry = retry + 1
+		}
+
+		if retry != 10 {
+			time.AfterFunc(60*time.Second, func() {
+				recordComments(channel, vodId, streamId, retry)
+			})
+			return
+		}
+
+		ffz, err := getFFZEmotes(channel)
+		if err != nil {
+			log.Printf("[%s] %v", channel, err)
+		}
+		oldComments.FFZSet = ffz
+		bttv, err := getBTTVEmotes(channel)
+		if err != nil {
+			log.Printf("[%s] %v", channel, err)
+		}
+		oldComments.BTTV = bttv
+
+		d, err := json.Marshal(oldComments)
+		if err != nil {
+			log.Printf("[%s] %v", channel, err)
+			return
+		}
+
+		compressedFile := zstdCompress(d, channel, vodId)
+		os.Remove(path + fileName)
+		fileName = fileName + ".zst"
+		err = ioutil.WriteFile(path+fileName, compressedFile, 0777)
+		if err != nil {
+			log.Printf("[%s] %v", channel, err)
+			return
+		}
+
+		log.Printf("[%s] Saved chat at %s", channel, path+fileName)
+
+		if upload_to_drive {
+			go func() {
+				err := uploadToDrive(path, fileName, channel, streamId)
+				if err != nil {
+					log.Printf("[%s] %v", channel, err)
+				}
+			}()
+		}
+
+		return
+	}
+
+	comments := fetchComments(vodId, "0")
+	cursor := comments.Cursor
+	log.Printf("[%s] Current Offset: %v", channel, comments.Comments[len(comments.Comments)-1].Content_offset_seconds)
+	for len(cursor) != 0 {
+		time.Sleep(500 * time.Millisecond)
+		nextComments := fetchNextComments(vodId, cursor)
+		for nextComments == nil {
+			time.Sleep(500 * time.Millisecond)
+			nextComments = fetchNextComments(vodId, cursor)
+		}
+		cursor = nextComments.Cursor
+		comments.Comments = append(comments.Comments, nextComments.Comments...)
+		log.Printf("[%s] Current Offset: %v", channel, nextComments.Comments[len(nextComments.Comments)-1].Content_offset_seconds)
+	}
+	d, err := json.Marshal(comments)
+	if err != nil {
+		log.Printf("[%s] %v", channel, err)
+		return
+	}
+	err = ioutil.WriteFile(path+fileName, d, 0777)
+	if err != nil {
+		log.Printf("[%s] %v", channel, err)
+		return
+	}
+
+	time.AfterFunc(60*time.Second, func() {
+		recordComments(channel, vodId, streamId, retry)
+	})
+
+	log.Printf("[%s] Saved inital %s chat.json", channel, vodId)
+}
+
+type FFZSet struct {
+	Set struct {
+		Emotes []struct {
+			Id     int    `json:"id"`
+			Code   string `json:"name"`
+			Base64 string `json:",omitempty"`
+		} `json:"emoticons"`
+	} `json:"set"`
+}
+
+type BTTV struct {
+	Emotes []struct {
+		Id     string `json:"id"`
+		Code   string `json:"code"`
+		Base64 string `json:",omitempty"`
+	} `json:"channelEmotes"`
+}
+
+type VodComments struct {
+	FFZSet   *FFZSet `json:",omitempty"`
+	BTTV     *BTTV   `json:",omitempty"`
+	Comments []struct {
+		Id                     string  `json:"_id"`
+		Channel_id             string  `json:"channel_id"`
+		Content_id             string  `json:"content_id"`
+		Content_offset_seconds float32 `json:"content_offset_seconds"`
+		Commenter              struct {
+			Display_name string `json:"display_name"`
+		} `json:"commenter"`
+		Message struct {
+			Fragments []struct {
+				Text     string `json:"text"`
+				Emoticon *struct {
+					Emoticon_id     string `json:"emoticon_id"`
+					Emoticon_set_id string `json:"emoticon_set_id"`
+				} `json:"emoticon,omitempty"`
+			} `json:"fragments"`
+			Is_action   bool `json:"is_action"`
+			User_badges *[]struct {
+				Id      string `json:"_id"`
+				Version string `json:"version"`
+			} `json:"user_badges,omitempty"`
+			User_color string `json:"user_color"`
+		} `json:"message"`
+	} `json:"comments"`
+	Cursor string `json:"_next,omitempty"`
+}
+
+//https://api.twitch.tv/v5/videos/${vodId}/comments?content_offset_seconds=${offset}
+func fetchComments(vodId string, offset string) *VodComments {
+	client := resty.New()
+
+	resp, _ := client.R().
+		SetHeader("Accept", "application/json").
+		SetHeader("Client-ID", TWITCH_CLIENT_ID).
+		Get(TWITCH_COMMENTS_API + "/videos/" + vodId + "/comments?content_offset_seconds=" + offset)
+	if resp.StatusCode() != 200 {
+		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
+		log.Printf(string(resp.Body()))
+		return nil
+	}
+
+	var vodComments VodComments
+	err := json.Unmarshal(resp.Body(), &vodComments)
+	if err != nil {
+		log.Printf("%v", err)
+	}
+
+	return &vodComments
+}
+
+//https://api.twitch.tv/v5/videos/${vodId}/comments?cursor=${cursor}
+func fetchNextComments(vodId string, cursor string) *VodComments {
+	client := resty.New()
+
+	resp, _ := client.R().
+		SetHeader("Accept", "application/json").
+		SetHeader("Client-ID", TWITCH_CLIENT_ID).
+		Get(TWITCH_COMMENTS_API + "/videos/" + vodId + "/comments?cursor=" + cursor)
+
+	if resp.StatusCode() != 200 {
+		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
+		log.Printf(string(resp.Body()))
+		return nil
+	}
+
+	var vodComments VodComments
+	err := json.Unmarshal(resp.Body(), &vodComments)
+	if err != nil {
+		log.Printf("%v", err)
+	}
+
+	return &vodComments
 }
 
 func checkAccessToken() bool {
@@ -369,12 +838,12 @@ func record(m3u8 string, channel string) error {
 	go func() {
 		stream, err = getStreamObject(channel)
 		if err != nil {
-			log.Println(err)
+			log.Printf("[%s] %v", channel, err)
 		}
 		for len(stream.StreamsData) == 0 {
 			stream, err = getStreamObject(channel)
 			if err != nil {
-				log.Println(err)
+				log.Printf("[%s] %v", channel, err)
 			}
 			time.Sleep(5 * time.Second)
 		}
@@ -402,12 +871,12 @@ func record(m3u8 string, channel string) error {
 	new_fileName := stream.StreamsData[0].Id + ".mp4"
 	e := os.Rename(path+fileName, path+new_fileName)
 	if e != nil {
-		log.Fatal(e)
+		return err
 	}
 
 	if upload_to_drive {
 		go func() {
-			err := uploadToDrive(path, new_fileName, channel, stream)
+			err := uploadToDrive(path, new_fileName, channel, stream.StreamsData[0].Id)
 			if err != nil {
 				log.Printf("[%s] %v", channel, err)
 			}
@@ -417,7 +886,7 @@ func record(m3u8 string, channel string) error {
 	return nil
 }
 
-func uploadToDrive(path string, fileName string, channel string, stream *Streams) error {
+func uploadToDrive(path string, fileName string, channel string, streamId string) error {
 	if !fileExists(path + fileName) {
 		return errors.New("File does not exist.. do not upload")
 	}
@@ -429,18 +898,21 @@ func uploadToDrive(path string, fileName string, channel string, stream *Streams
 	googleConfig.ClientSecret = config.Google.ClientSecret
 	googleConfig.Endpoint.TokenURL = config.Google.Endpoint.TokenURL
 	googleConfig.Scopes = config.Google.Scopes
-	client := getClient(&googleConfig)
+	err, client := getClient(&googleConfig)
+	if err != nil {
+		return err
+	}
 
 	srv, err := drive.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
-		log.Fatalf("[%s] %v", channel, err)
+		return err
 	}
 
 	//Retrieve Folder Id using channel name.
 	nextPageToken := ""
 	fileList, err := getDriveFileList(srv, nextPageToken)
 	if err != nil {
-		log.Fatalf("[%s] %v", channel, err)
+		return err
 	}
 	rootFolderId := ""
 	streamIdFolder := ""
@@ -451,7 +923,7 @@ func uploadToDrive(path string, fileName string, channel string, stream *Streams
 				rootFolderId = file.Id
 				continue
 			}
-			if strings.EqualFold(file.Name, stream.StreamsData[0].Id) {
+			if strings.EqualFold(file.Name, streamId) {
 				log.Printf("[%s] Found stream id folder %s", channel, file.Id)
 				streamIdFolder = file.Id
 				continue
@@ -472,32 +944,32 @@ func uploadToDrive(path string, fileName string, channel string, stream *Streams
 		log.Printf("[%s] Creating root folder", channel)
 		res, err := srv.Files.Create(&drive.File{Name: channel, MimeType: "application/vnd.google-apps.folder"}).Do()
 		if err != nil {
-			log.Fatalf("[%s] %v", channel, err)
+			return err
 		}
 		rootFolderId = res.Id
 	}
 
 	if len(streamIdFolder) == 0 {
 		//Create Stream Id Folder if it doesn't exist
-		log.Printf("[%s] Creating %s folder", channel, stream.StreamsData[0].Id)
-		res, err := srv.Files.Create(&drive.File{Name: stream.StreamsData[0].Id, MimeType: "application/vnd.google-apps.folder", Parents: []string{rootFolderId}}).Do()
+		log.Printf("[%s] Creating %s folder", channel, streamId)
+		res, err := srv.Files.Create(&drive.File{Name: streamId, MimeType: "application/vnd.google-apps.folder", Parents: []string{rootFolderId}}).Do()
 		if err != nil {
-			log.Fatalf("[%s] %v", channel, err)
+			return err
 		}
 		streamIdFolder = res.Id
 	}
 
-	//Upload MP4 to Drive
-	log.Printf("[%s] Uploading video", channel)
+	//Upload FIle to Drive
+	log.Printf("[%s] Uploading file", channel)
 	f, err := os.Open(path + fileName)
 	if err != nil {
-		log.Fatalf("[%s] error opening %q: %v", channel, path+fileName, err)
+		return err
 	}
 	defer f.Close()
 	// Grab file info
 	inputInfo, err := f.Stat()
 	if err != nil {
-		log.Fatalf("[%s] %v", channel, err)
+		return err
 	}
 	getRate := MeasureTransferRate()
 
@@ -508,7 +980,7 @@ func uploadToDrive(path string, fileName string, channel string, stream *Streams
 
 	res, err := srv.Files.Create(&drive.File{Name: fileName, Parents: []string{streamIdFolder}}).ResumableMedia(context.Background(), f, inputInfo.Size(), mime.TypeByExtension(filepath.Ext(fileName))).ProgressUpdater(showProgress).Do()
 	if err != nil {
-		log.Fatalf("[%s] %v", channel, err)
+		return err
 	}
 	log.Printf("[%s] Uploaded %s Drive Id: %s", channel, res.Name, res.Id)
 
@@ -570,7 +1042,7 @@ func MeasureTransferRate() func(int64) string {
 	}
 }
 
-func getClient(c *oauth2.Config) *http.Client {
+func getClient(c *oauth2.Config) (error, *http.Client) {
 	var tok oauth2.Token
 	tok.AccessToken = config.Drive.Access_Token
 	tok.RefreshToken = config.Drive.Refresh_Token
@@ -579,7 +1051,7 @@ func getClient(c *oauth2.Config) *http.Client {
 	tokenSource := c.TokenSource(oauth2.NoContext, &tok)
 	newToken, err := tokenSource.Token()
 	if err != nil {
-		log.Fatalln(err)
+		return err, nil
 	}
 	if newToken.AccessToken != tok.AccessToken {
 		log.Println("Saving new drive tokens..")
@@ -589,14 +1061,14 @@ func getClient(c *oauth2.Config) *http.Client {
 		config.Drive.Expiry = newToken.Expiry
 		d, err := json.MarshalIndent(config, "", " ")
 		if err != nil {
-			log.Fatalln(err)
+			return err, nil
 		}
 		err = ioutil.WriteFile(cfgPath, d, 0777)
 		if err != nil {
-			log.Fatalln(err)
+			return err, nil
 		}
 	}
-	return oauth2.NewClient(context.Background(), tokenSource)
+	return nil, oauth2.NewClient(context.Background(), tokenSource)
 }
 
 func getDriveFileList(driveSvc *drive.Service, nextPageToken string) (*drive.FileList, error) {
@@ -616,7 +1088,7 @@ type TokenSig struct {
 	Started_at string `json:"started_at"`
 }
 
-func getLiveTokenSig(channel string) *TokenSig {
+func getLiveTokenSig(channel string) (*TokenSig, error) {
 	log.Printf("[%s] Getting stream token & signature", channel)
 	client := resty.New().R()
 
@@ -654,15 +1126,15 @@ func getLiveTokenSig(channel string) *TokenSig {
 
 	if resp.StatusCode() != 200 {
 		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
-		log.Printf(string(resp.Body()))
+		return nil, errors.New(string(resp.Body()))
 	}
 
 	var tokenSig TokenSig
 	if err := json.Unmarshal(resp.Body(), &tokenSig); err != nil {
-		log.Fatalln(err)
+		return nil, err
 	}
 
-	return &tokenSig
+	return &tokenSig, nil
 }
 
 func getLiveM3u8(channel string, tokenSig *TokenSig) (string, error) {
@@ -686,7 +1158,7 @@ func getLiveM3u8(channel string, tokenSig *TokenSig) (string, error) {
 
 	p, listType, err := m3u8.DecodeFrom(bytes.NewReader(resp.Body()), true)
 	if err != nil {
-		log.Fatalln(err)
+		return "", err
 	}
 	switch listType {
 	case m3u8.MASTER:
