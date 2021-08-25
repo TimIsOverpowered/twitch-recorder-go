@@ -898,7 +898,7 @@ func uploadToDrive(path string, fileName string, channel string, streamId string
 	googleConfig.ClientSecret = config.Google.ClientSecret
 	googleConfig.Endpoint.TokenURL = config.Google.Endpoint.TokenURL
 	googleConfig.Scopes = config.Google.Scopes
-	err, client := getClient(&googleConfig)
+	client, err := getClient(&googleConfig)
 	if err != nil {
 		return err
 	}
@@ -1042,7 +1042,7 @@ func MeasureTransferRate() func(int64) string {
 	}
 }
 
-func getClient(c *oauth2.Config) (error, *http.Client) {
+func getClient(c *oauth2.Config) (*http.Client, error) {
 	var tok oauth2.Token
 	tok.AccessToken = config.Drive.Access_Token
 	tok.RefreshToken = config.Drive.Refresh_Token
@@ -1051,7 +1051,7 @@ func getClient(c *oauth2.Config) (error, *http.Client) {
 	tokenSource := c.TokenSource(oauth2.NoContext, &tok)
 	newToken, err := tokenSource.Token()
 	if err != nil {
-		return err, nil
+		return nil, err
 	}
 	if newToken.AccessToken != tok.AccessToken {
 		log.Println("Saving new drive tokens..")
@@ -1061,14 +1061,14 @@ func getClient(c *oauth2.Config) (error, *http.Client) {
 		config.Drive.Expiry = newToken.Expiry
 		d, err := json.MarshalIndent(config, "", " ")
 		if err != nil {
-			return err, nil
+			return nil, err
 		}
 		err = ioutil.WriteFile(cfgPath, d, 0777)
 		if err != nil {
-			return err, nil
+			return nil, err
 		}
 	}
-	return nil, oauth2.NewClient(context.Background(), tokenSource)
+	return oauth2.NewClient(context.Background(), tokenSource), nil
 }
 
 func getDriveFileList(driveSvc *drive.Service, nextPageToken string) (*drive.FileList, error) {
