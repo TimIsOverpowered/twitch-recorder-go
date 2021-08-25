@@ -1,7 +1,7 @@
 # Twitch Recorder Go by OP
 Record Twitch Live streams & Upload to Google Drive if needed
 
-This program can monitor and record multiple Twitch streams live and convert it to .mkv files.
+This program can monitor and record multiple Twitch streams live and convert it to .mp4 files.
 
 ## Requirements
 [Streamlink](https://streamlink.github.io/)  If using streamlink download method (default)
@@ -9,6 +9,11 @@ This program can monitor and record multiple Twitch streams live and convert it 
 [Ffmpeg](https://ffmpeg.org/) If using ffmpeg download method (specify -ffmpeg (./twitch-recorder-go -ffmpeg))
 
 [Twitch](https://dev.twitch.tv/console) Register a Twitch app
+
+## Chat
+Create a chat.json file and compress it using [ZStandard](https://github.com/facebook/zstd)
+
+Specify -chat (./twitch-recorder-go -chat) to record chat
 
 ## Drive
 Ignore this, if you are not planning to upload to drive.
