@@ -884,10 +884,10 @@ func record(m3u8 string, channel string) error {
 				log.Printf("[%s] %v", channel, err)
 			}
 			//post to api
-			err = postToApi(channel, stream.StreamsData[0].Id, driveId, path+fileName)
+			err = postToApi(channel, stream.StreamsData[0].Id, driveId, path+new_fileName)
 			if err != nil {
 				log.Printf("[%s] %v", channel, err)
-				os.Remove(path + fileName)
+				os.Remove(path + new_fileName)
 			}
 		}()
 	}
