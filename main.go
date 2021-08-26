@@ -94,17 +94,19 @@ func main() {
 	cfgPath = configPath
 	var wg sync.WaitGroup
 	wg.Add(1)
-	for _, channel := range config.Channels {
-		if !checkIfUserExists(channel) {
-			log.Printf("%s does not exist", channel)
-			continue
-		}
-		tokenSig, err := getLiveTokenSig(channel)
-		if err != nil {
-			log.Printf("[%s] %v", channel, err)
-		}
-		go Interval(channel, tokenSig)
-	}
+	recordComments("squchan", "1129022800", "43417268733", "")
+	/*
+		for _, channel := range config.Channels {
+			if !checkIfUserExists(channel) {
+				log.Printf("%s does not exist", channel)
+				continue
+			}
+			tokenSig, err := getLiveTokenSig(channel)
+			if err != nil {
+				log.Printf("[%s] %v", channel, err)
+			}
+			go Interval(channel, tokenSig)
+		}*/
 	wg.Wait()
 }
 
@@ -245,7 +247,7 @@ func Check(channel string, token *TokenSig) {
 					}
 				}
 				log.Printf("[%s] Recording %s chat..", channel, vod_data.VodData[0].Id)
-				recordComments(channel, vod_data.VodData[0].Id, stream.StreamsData[0].Id)
+				recordComments(channel, vod_data.VodData[0].Id, stream.StreamsData[0].Id, "")
 			}()
 		}
 		err := record(m3u8, channel)
@@ -448,12 +450,12 @@ func getBTTVEmotes(channel string) (*BTTV, error) {
 	return &bttv, nil
 }
 
-func recordComments(channel string, vodId string, streamId string, retry_optional ...int) {
+func recordComments(channel string, vodId string, streamId string, cursor string, retry_optional ...int) {
 	retry := 0
 	if len(retry_optional) > 0 {
 		retry = retry_optional[0]
 	}
-	log.Printf("[%s] Checking Comments.. retry: %v", channel, retry)
+	log.Printf("[%s] Checking Comments.. retry: %v cursor: %s", channel, retry, cursor)
 
 	var path string
 	if runtime.GOOS == "windows" {
@@ -474,102 +476,124 @@ func recordComments(channel string, vodId string, streamId string, retry_optiona
 			log.Printf("[%s] %v", channel, err)
 			return
 		}
-		lastOffset := oldComments.Comments[len(oldComments.Comments)-1].Content_offset_seconds
-		comments := fetchComments(vodId, fmt.Sprintf("%f", lastOffset))
-		if comments != nil {
-			cursor := comments.Cursor
-			if lastOffset != comments.Comments[len(comments.Comments)-1].Content_offset_seconds {
-				log.Printf("[%s] Current Offset: %v", channel, comments.Comments[len(comments.Comments)-1].Content_offset_seconds)
-
-				//only add to array if it doesn't exist in original array...
-				for _, comment := range comments.Comments {
-					commentExists := false
-					for i := 0; i < len(oldComments.Comments); i++ {
-						v := oldComments.Comments[i]
-						if v.Id == comment.Id {
-							commentExists = true
-							break
-						}
-					}
-					if !commentExists {
-						oldComments.Comments = append(oldComments.Comments, comment)
-					}
-				}
-
-				for len(cursor) != 0 {
-					time.Sleep(500 * time.Millisecond)
-					nextComments := fetchNextComments(vodId, cursor)
-					for nextComments == nil {
-						time.Sleep(500 * time.Millisecond)
-						nextComments = fetchNextComments(vodId, cursor)
-					}
-					cursor = nextComments.Cursor
-					oldComments.Comments = append(oldComments.Comments, nextComments.Comments...)
-					log.Printf("[%s] Current Offset: %v", channel, nextComments.Comments[len(nextComments.Comments)-1].Content_offset_seconds)
-				}
-				d, err := json.Marshal(oldComments)
-				if err != nil {
-					log.Printf("[%s] %v", channel, err)
-					return
-				}
-				err = ioutil.WriteFile(path+fileName, d, 0777)
-				retry = 0
-			} else {
-				retry = retry + 1
+		if len(cursor) == 0 {
+			lastOffset := oldComments.Comments[len(oldComments.Comments)-1].Content_offset_seconds
+			comments, err := fetchComments(vodId, fmt.Sprintf("%f", lastOffset))
+			if err != nil {
+				log.Printf("[%s] %v", channel, err)
+				return
 			}
-		} else {
-			retry = retry + 1
+
+			//only add to array if it doesn't exist in original array...
+			for _, comment := range comments.Comments {
+				commentExists := false
+				for i := 0; i < len(oldComments.Comments); i++ {
+					v := oldComments.Comments[i]
+					if v.Id == comment.Id {
+						commentExists = true
+						break
+					}
+				}
+				if !commentExists {
+					oldComments.Comments = append(oldComments.Comments, comment)
+					log.Printf("[%s] Current Offset: %v", channel, comment.Content_offset_seconds)
+				}
+			}
+
+			cursor = comments.Cursor
 		}
 
-		if retry != 10 {
-			time.AfterFunc(60*time.Second, func() {
-				recordComments(channel, vodId, streamId, retry)
-			})
-			return
+		for len(cursor) != 0 {
+			time.Sleep(500 * time.Millisecond)
+			nextComments := fetchNextComments(vodId, cursor)
+			for nextComments == nil {
+				time.Sleep(500 * time.Millisecond)
+				nextComments = fetchNextComments(vodId, cursor)
+			}
+			cursor = nextComments.Cursor
+			for _, comment := range nextComments.Comments {
+				commentExists := false
+				for i := 0; i < len(oldComments.Comments); i++ {
+					v := oldComments.Comments[i]
+					if v.Id == comment.Id {
+						commentExists = true
+						break
+					}
+				}
+				if !commentExists {
+					oldComments.Comments = append(oldComments.Comments, comment)
+				}
+			}
+			log.Printf("[%s] Current Offset: %v", channel, nextComments.Comments[len(nextComments.Comments)-1].Content_offset_seconds)
 		}
-
-		ffz, err := getFFZEmotes(channel)
-		if err != nil {
-			log.Printf("[%s] %v", channel, err)
-		}
-		oldComments.FFZSet = ffz
-		bttv, err := getBTTVEmotes(channel)
-		if err != nil {
-			log.Printf("[%s] %v", channel, err)
-		}
-		oldComments.BTTV = bttv
 
 		d, err := json.Marshal(oldComments)
 		if err != nil {
 			log.Printf("[%s] %v", channel, err)
 			return
 		}
+		err = ioutil.WriteFile(path+fileName, d, 0777)
 
-		compressedFile := zstdCompress(d, channel, vodId)
-		os.Remove(path + fileName)
-		fileName = fileName + ".zst"
-		err = ioutil.WriteFile(path+fileName, compressedFile, 0777)
+		stream, err := getStreamObject(channel)
 		if err != nil {
 			log.Printf("[%s] %v", channel, err)
-			return
 		}
+		if len(stream.StreamsData) > 0 && streamId == stream.StreamsData[0].Id {
+			time.AfterFunc(60*time.Second, func() {
+				recordComments(channel, vodId, streamId, cursor, retry)
+			})
+		} else if retry < 10 {
+			retry = retry + 1
+			time.AfterFunc(60*time.Second, func() {
+				recordComments(channel, vodId, streamId, cursor, retry)
+			})
+		} else {
+			ffz, err := getFFZEmotes(channel)
+			if err != nil {
+				log.Printf("[%s] %v", channel, err)
+			}
+			oldComments.FFZSet = ffz
+			bttv, err := getBTTVEmotes(channel)
+			if err != nil {
+				log.Printf("[%s] %v", channel, err)
+			}
+			oldComments.BTTV = bttv
 
-		log.Printf("[%s] Saved chat at %s", channel, path+fileName)
+			d, err = json.Marshal(oldComments)
+			if err != nil {
+				log.Printf("[%s] %v", channel, err)
+				return
+			}
 
-		if upload_to_drive {
-			go func() {
-				err := uploadToDrive(path, fileName, channel, streamId)
-				if err != nil {
-					log.Printf("[%s] %v", channel, err)
-				}
-			}()
+			compressedFile := zstdCompress(d, channel, vodId)
+			os.Remove(path + fileName)
+			fileName = fileName + ".zst"
+			err = ioutil.WriteFile(path+fileName, compressedFile, 0777)
+			if err != nil {
+				log.Printf("[%s] %v", channel, err)
+				return
+			}
+
+			log.Printf("[%s] Saved chat at %s", channel, path+fileName)
+
+			if upload_to_drive {
+				go func() {
+					err := uploadToDrive(path, fileName, channel, streamId)
+					if err != nil {
+						log.Printf("[%s] %v", channel, err)
+					}
+				}()
+			}
 		}
-
 		return
 	}
 
-	comments := fetchComments(vodId, "0")
-	cursor := comments.Cursor
+	comments, err := fetchComments(vodId, "0")
+	if err != nil {
+		log.Printf("[%s] %v", channel, err)
+		return
+	}
+	cursor = comments.Cursor
 	log.Printf("[%s] Current Offset: %v", channel, comments.Comments[len(comments.Comments)-1].Content_offset_seconds)
 	for len(cursor) != 0 {
 		time.Sleep(500 * time.Millisecond)
@@ -594,7 +618,7 @@ func recordComments(channel string, vodId string, streamId string, retry_optiona
 	}
 
 	time.AfterFunc(60*time.Second, func() {
-		recordComments(channel, vodId, streamId, retry)
+		recordComments(channel, vodId, streamId, cursor, retry)
 	})
 
 	log.Printf("[%s] Saved inital %s chat.json", channel, vodId)
@@ -649,7 +673,7 @@ type VodComments struct {
 }
 
 //https://api.twitch.tv/v5/videos/${vodId}/comments?content_offset_seconds=${offset}
-func fetchComments(vodId string, offset string) *VodComments {
+func fetchComments(vodId string, offset string) (*VodComments, error) {
 	client := resty.New()
 
 	resp, _ := client.R().
@@ -658,8 +682,7 @@ func fetchComments(vodId string, offset string) *VodComments {
 		Get(TWITCH_COMMENTS_API + "/videos/" + vodId + "/comments?content_offset_seconds=" + offset)
 	if resp.StatusCode() != 200 {
 		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
-		log.Printf(string(resp.Body()))
-		return nil
+		return nil, errors.New(string(resp.Body()))
 	}
 
 	var vodComments VodComments
@@ -668,7 +691,7 @@ func fetchComments(vodId string, offset string) *VodComments {
 		log.Printf("%v", err)
 	}
 
-	return &vodComments
+	return &vodComments, nil
 }
 
 //https://api.twitch.tv/v5/videos/${vodId}/comments?cursor=${cursor}
