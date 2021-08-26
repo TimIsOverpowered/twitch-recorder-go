@@ -94,19 +94,17 @@ func main() {
 	cfgPath = configPath
 	var wg sync.WaitGroup
 	wg.Add(1)
-	recordComments("squchan", "1129022800", "43417268733", "")
-	/*
-		for _, channel := range config.Channels {
-			if !checkIfUserExists(channel) {
-				log.Printf("%s does not exist", channel)
-				continue
-			}
-			tokenSig, err := getLiveTokenSig(channel)
-			if err != nil {
-				log.Printf("[%s] %v", channel, err)
-			}
-			go Interval(channel, tokenSig)
-		}*/
+	for _, channel := range config.Channels {
+		if !checkIfUserExists(channel) {
+			log.Printf("%s does not exist", channel)
+			continue
+		}
+		tokenSig, err := getLiveTokenSig(channel)
+		if err != nil {
+			log.Printf("[%s] %v", channel, err)
+		}
+		go Interval(channel, tokenSig)
+	}
 	wg.Wait()
 }
 
