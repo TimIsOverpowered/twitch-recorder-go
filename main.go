@@ -479,7 +479,10 @@ func recordComments(channel string, vodId string, streamId string, cursor string
 			comments, err := fetchComments(vodId, fmt.Sprintf("%f", lastOffset))
 			if err != nil {
 				log.Printf("[%s] %v", channel, err)
-				return
+				retry = retry + 1
+				time.AfterFunc(60*time.Second, func() {
+					recordComments(channel, vodId, streamId, cursor, retry)
+				})
 			}
 
 			//only add to array if it doesn't exist in original array...
