@@ -484,6 +484,7 @@ func recordComments(channel string, vodId string, streamId string, cursor string
 				time.AfterFunc(60*time.Second, func() {
 					recordComments(channel, vodId, streamId, cursor, retry)
 				})
+				return
 			}
 
 			//only add to array if it doesn't exist in original array...
@@ -544,11 +545,13 @@ func recordComments(channel string, vodId string, streamId string, cursor string
 			time.AfterFunc(60*time.Second, func() {
 				recordComments(channel, vodId, streamId, cursor, retry)
 			})
+			return
 		} else if retry < 10 {
 			retry = retry + 1
 			time.AfterFunc(60*time.Second, func() {
 				recordComments(channel, vodId, streamId, cursor, retry)
 			})
+			return
 		} else {
 			ffz, err := getFFZEmotes(channel)
 			if err != nil {
