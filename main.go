@@ -483,6 +483,7 @@ func recordComments(channel string, vodId string, streamId string, cursor string
 				time.AfterFunc(60*time.Second, func() {
 					recordComments(channel, vodId, streamId, cursor, retry)
 				})
+				return
 			}
 
 			//only add to array if it doesn't exist in original array...
