@@ -474,6 +474,47 @@ func recordComments(channel string, vodId string, streamId string, cursor string
 			log.Printf("[%s] %v", channel, err)
 			return
 		}
+
+		if retry == 10 {
+			ffz, err := getFFZEmotes(channel)
+			if err != nil {
+				log.Printf("[%s] %v", channel, err)
+			}
+			oldComments.FFZSet = ffz
+			bttv, err := getBTTVEmotes(channel)
+			if err != nil {
+				log.Printf("[%s] %v", channel, err)
+			}
+			oldComments.BTTV = bttv
+
+			d, err := json.Marshal(oldComments)
+			if err != nil {
+				log.Printf("[%s] %v", channel, err)
+				return
+			}
+
+			compressedFile := zstdCompress(d, channel, vodId)
+			os.Remove(path + fileName)
+			fileName = fileName + ".zst"
+			err = ioutil.WriteFile(path+fileName, compressedFile, 0777)
+			if err != nil {
+				log.Printf("[%s] %v", channel, err)
+				return
+			}
+
+			log.Printf("[%s] Saved chat at %s", channel, path+fileName)
+
+			if upload_to_drive {
+				go func() {
+					err := uploadToDrive(path, fileName, channel, streamId)
+					if err != nil {
+						log.Printf("[%s] %v", channel, err)
+					}
+				}()
+			}
+			return
+		}
+
 		if len(cursor) == 0 {
 			lastOffset := oldComments.Comments[len(oldComments.Comments)-1].Content_offset_seconds
 			comments, err := fetchComments(vodId, fmt.Sprintf("%f", lastOffset))
@@ -549,43 +590,6 @@ func recordComments(channel string, vodId string, streamId string, cursor string
 			time.AfterFunc(60*time.Second, func() {
 				recordComments(channel, vodId, streamId, cursor, retry)
 			})
-		} else {
-			ffz, err := getFFZEmotes(channel)
-			if err != nil {
-				log.Printf("[%s] %v", channel, err)
-			}
-			oldComments.FFZSet = ffz
-			bttv, err := getBTTVEmotes(channel)
-			if err != nil {
-				log.Printf("[%s] %v", channel, err)
-			}
-			oldComments.BTTV = bttv
-
-			d, err = json.Marshal(oldComments)
-			if err != nil {
-				log.Printf("[%s] %v", channel, err)
-				return
-			}
-
-			compressedFile := zstdCompress(d, channel, vodId)
-			os.Remove(path + fileName)
-			fileName = fileName + ".zst"
-			err = ioutil.WriteFile(path+fileName, compressedFile, 0777)
-			if err != nil {
-				log.Printf("[%s] %v", channel, err)
-				return
-			}
-
-			log.Printf("[%s] Saved chat at %s", channel, path+fileName)
-
-			if upload_to_drive {
-				go func() {
-					err := uploadToDrive(path, fileName, channel, streamId)
-					if err != nil {
-						log.Printf("[%s] %v", channel, err)
-					}
-				}()
-			}
 		}
 		return
 	}
