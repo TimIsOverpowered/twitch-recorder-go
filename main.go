@@ -509,7 +509,9 @@ func recordComments(channel string, vodId string, streamId string, cursor string
 					err := uploadToDrive(path, fileName, channel, streamId)
 					if err != nil {
 						log.Printf("[%s] %v", channel, err)
+						return
 					}
+					os.Remove(path + fileName)
 				}()
 			}
 			return
