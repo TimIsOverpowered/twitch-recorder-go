@@ -602,6 +602,12 @@ func recordComments(channel string, vodId string, streamId string, cursor string
 		log.Printf("[%s] %v", channel, err)
 		return
 	}
+	if len(comments.Comments) == 0 {
+		time.AfterFunc(60*time.Second, func() {
+			recordComments(channel, vodId, streamId, cursor, retry)
+		})
+		return
+	}
 	cursor = comments.Cursor
 	log.Printf("[%s] Current Offset: %v", channel, comments.Comments[len(comments.Comments)-1].Content_offset_seconds)
 	for len(cursor) != 0 {
@@ -697,7 +703,7 @@ func fetchComments(vodId string, offset string) (*VodComments, error) {
 	var vodComments VodComments
 	err := json.Unmarshal(resp.Body(), &vodComments)
 	if err != nil {
-		log.Printf("%v", err)
+		return nil, err
 	}
 
 	return &vodComments, nil
