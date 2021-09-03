@@ -602,6 +602,12 @@ func recordComments(channel string, vodId string, streamId string, cursor string
 		return
 	}
 	cursor = comments.Cursor
+	if len(comments.Comments) == 0 {
+		time.AfterFunc(60*time.Second, func() {
+			recordComments(channel, vodId, streamId, cursor, retry)
+		})
+		return
+	}
 	log.Printf("[%s] Current Offset: %v", channel, comments.Comments[len(comments.Comments)-1].Content_offset_seconds)
 	for len(cursor) != 0 {
 		time.Sleep(500 * time.Millisecond)
