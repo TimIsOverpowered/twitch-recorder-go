@@ -886,8 +886,9 @@ func record(m3u8 string, channel string) error {
 	} else {
 		//use ffmpeg
 		log.Printf("[%s] Executing ffmpeg: %s", channel, "ffmpeg -y -i "+m3u8+" -c copy -copyts -start_at_zero -bsf:a aac_adtstoasc -f mp4 "+path+fileName)
-		cmd := exec.Command("ffmpeg", "-y", "-rw_timeout", "3000000", "-i", m3u8, "-c", "copy", "-copyts", "-start_at_zero", "-bsf:a", "aac_adtstoasc", "-f", "mp4", path+fileName)
+		cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "warning", "-y", "-rw_timeout", "3000000", "-i", m3u8, "-c", "copy", "-copyts", "-start_at_zero", "-bsf:a", "aac_adtstoasc", "-f", "mp4", path+fileName)
 		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 		cmd.Run()
 		log.Printf("[%s] Finished downloading.. Saved at: %s", channel, path+fileName)
 	}
