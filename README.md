@@ -33,7 +33,7 @@ Create `config.json` file (use -config to specify the path to the config file)
  "twitch": {
   "client_id": "XXXXXXXXXX",
   "client_secret": "XXXXXXXXXX",
-  "oauth_key": "XXXXXXXXXX" //NOT NEEDED, BUT USED WITH FFMPEG OPTION. IT CAN DISABLE ADS IF YOUR TWITCH ACCOUNT HAS TURBO OR SUBBED TO CHANNEL YOU ARE RECORDING.
+  "oauth_key": "XXXXXXXXXX"
  },
  "vod_directory": "C:\\Users\\Overpowered",
  "channels": [
@@ -60,6 +60,7 @@ Create `config.json` file (use -config to specify the path to the config file)
  }
 }
 ```
+Optional: Twitch OAuth Key (Used if you are using FFMPEG + twitch turbo to bypass ads), Drive, Google
 
 ## Running the program
 
