@@ -16,7 +16,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -455,12 +454,7 @@ func recordComments(channel string, vodId string, streamId string, cursor string
 	}
 	log.Printf("[%s] Checking Comments.. retry: %v cursor: %s", channel, retry, cursor)
 
-	var path string
-	if runtime.GOOS == "windows" {
-		path = config.Vod_directory + "\\" + channel + "\\"
-	} else {
-		path = config.Vod_directory + "/" + channel + "/"
-	}
+	path := filepath.FromSlash(config.Vod_directory + "/" + channel + "/")
 	if !fileExists(path) {
 		os.MkdirAll(path, 0777)
 	}
@@ -842,32 +836,107 @@ func CheckIfLive(token *TokenSig, channel string) (string, bool) {
 	return m3u8, true
 }
 
-func record(m3u8 string, channel string) error {
-	date := time.Now().Format("01-02-2006")
-	log.Printf("[%s] is live. %s", channel, date)
-	var path string
-	if runtime.GOOS == "windows" {
-		path = config.Vod_directory + "\\" + channel + "\\"
-	} else {
-		path = config.Vod_directory + "/" + channel + "/"
+func parseM3u8(client *resty.Client, m3u8Uri string) (m3u8.Playlist, int, error) {
+	resp, _ := client.R().
+		Get(m3u8Uri)
+
+	statusCode := resp.StatusCode()
+	if statusCode != 200 {
+		return nil, statusCode, errors.New(string(resp.Body()))
 	}
+
+	buffer := bytes.NewBuffer(resp.Body())
+
+	p, _, err := m3u8.Decode(*buffer, true)
+	if err != nil {
+		return nil, statusCode, errors.New("Failed to decode m3u8..")
+	}
+
+	return p, statusCode, nil
+}
+
+func downloadSegment(client *resty.Client, segmentUri string, filePath string) ([]byte, error) {
+	resp, _ := client.R().
+		Get(segmentUri)
+
+	statusCode := resp.StatusCode()
+	if statusCode != 200 {
+		return nil, errors.New(string(resp.Body()))
+	}
+
+	return resp.Body(), nil
+}
+
+func download(client *resty.Client, m3u8Uri string, channel string, path string, lastDownloadedTSUrl string) (int, int, string, []string) {
 	if !fileExists(path) {
 		os.MkdirAll(path, 0777)
 	}
-	fileName := date + ".mp4"
 
-	if fileExists(path + fileName) {
-		os.Remove(path + fileName)
+	totalSegments := 0
+
+	m3u8Object, statusCode, err := parseM3u8(client, m3u8Uri)
+	if err != nil {
+		log.Printf("[%s] %v", channel, err)
 	}
 
-	var stream *Streams
-	var err error
+	segments := m3u8Object.(*m3u8.MediaPlaylist).Segments
+	index := 0
+	for i, segment := range segments {
+		if segment == nil {
+			continue
+		}
 
-	go func() {
-		stream, err = getStreamObject(channel)
+		if segment.URI == lastDownloadedTSUrl {
+			index = i + 1
+			break
+		}
+	}
+
+	var filePaths []string
+	for i := index; i < len(segments); i++ {
+		segment := segments[i]
+		if segment == nil {
+			continue
+		}
+		lastDownloadedTSUrl = segment.URI
+
+		fileName := strconv.Itoa(i) + ".ts"
+		filePath := path + fileName
+
+		filePaths = append(filePaths, filePath)
+
+		downloadedSegment, err := downloadSegment(client, segment.URI, filePath)
 		if err != nil {
 			log.Printf("[%s] %v", channel, err)
 		}
+
+		if err := ioutil.WriteFile(filePath, downloadedSegment, 0777); err != nil {
+			log.Printf("[%s] %v", channel, err)
+		}
+		totalSegments = totalSegments + 1
+	}
+
+	return statusCode, totalSegments, lastDownloadedTSUrl, filePaths
+}
+
+func record(m3u8Uri string, channel string) error {
+	date := time.Now().Format("01-02-2006")
+	path := filepath.FromSlash(config.Vod_directory + "/" + channel + "/")
+	tsFilePath := filepath.FromSlash(path + "ts/")
+	mp4FileName := channel + ".mp4"
+
+	if fileExists(mp4FileName) {
+		os.Remove(mp4FileName)
+	}
+
+	var stream *Streams
+
+	go func(channel string) {
+		stream, err := getStreamObject(channel)
+		if err != nil {
+			log.Printf("[%s] %v", channel, err)
+		}
+
 		for len(stream.StreamsData) == 0 {
 			stream, err = getStreamObject(channel)
 			if err != nil {
@@ -875,37 +944,104 @@ func record(m3u8 string, channel string) error {
 			}
 			time.Sleep(5 * time.Second)
 		}
+	}(channel)
+
+	if !fileExists(path) {
+		os.MkdirAll(path, 0777)
+	}
+
+	client := resty.New().SetRetryCount(10)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		var statusCode int
+		lastDownloadedTSUrl := ""
+		totalSegments := 0
+		var tsFilePaths []string
+		for statusCode != 404 {
+			statusCode, totalSegments, lastDownloadedTSUrl, tsFilePaths = download(client, m3u8Uri, channel, tsFilePath, lastDownloadedTSUrl)
+			log.Printf("[%s] Downloaded %v segments", channel, totalSegments)
+
+			concatPath := tsFilePath + "concat.txt"
+			var err error
+
+			concatTSFile, err := os.Create(concatPath)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			for _, tsFile := range tsFilePaths {
+				_, err = concatTSFile.WriteString("file '" + tsFile + "'\n")
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
+
+			concatTSFile.Close()
+
+			concatTSMp4FileName := "tempts_" + channel + ".mp4"
+			log.Printf("[%s] Executing ffmpeg: %s", channel, "ffmpeg -y -f concat -safe 0 -i "+concatPath+" -c copy -bsf:a aac_adtstoasc -f mp4 "+path+concatTSMp4FileName)
+			cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "warning", "-y", "-f", "concat", "-safe", "0", "-i", concatPath, "-c", "copy", "-bsf:a", "aac_adtstoasc", "-f", "mp4", path+concatTSMp4FileName)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			cmd.Run()
+
+			os.RemoveAll(tsFilePath)
+
+			tempMp4FileName := "temp_" + channel + ".mp4"
+
+			if fileExists(path + mp4FileName) {
+				concatMp4FilePath := path + "inputs.txt"
+				concatMp4File, err := os.Create(concatMp4FilePath)
+				if err != nil {
+					log.Fatal(err)
+				}
+				_, err = concatMp4File.WriteString("file '" + path + mp4FileName + "'\n")
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				_, err = concatMp4File.WriteString("file '" + path + concatTSMp4FileName + "'\n")
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				concatMp4File.Close()
+
+				log.Printf("[%s] Executing ffmpeg: %s", channel, "ffmpeg -y -f concat -safe 0 -i "+concatMp4FilePath+" -c copy -f mp4 "+path+tempMp4FileName)
+				cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "warning", "-y", "-f", "concat", "-safe", "0", "-i", concatMp4FilePath, "-c", "copy", "-f", "mp4", path+tempMp4FileName)
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				cmd.Run()
+				os.Remove(path + concatTSMp4FileName)
+				os.Remove(concatMp4FilePath)
+				os.Remove(path + mp4FileName)
+				os.Rename(path+tempMp4FileName, path+mp4FileName)
+			} else {
+				os.Rename(path+concatTSMp4FileName, path+mp4FileName)
+			}
+
+			log.Printf("[%s] Saved mp4 at: %s", channel, path+mp4FileName)
+
+			time.Sleep(6 * time.Second)
+		}
+		defer wg.Done()
 	}()
+	wg.Wait()
 
-	if !use_ffmpeg {
-		//use streamlink
-		cmd := exec.Command("streamlink", "-o", path+fileName, "twitch.tv/"+channel, "best", "--twitch-disable-hosting", "--twitch-disable-ads", "--twitch-disable-reruns")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Run()
+	var finalFileName string
+	if stream != nil {
+		finalFileName = stream.StreamsData[0].Id + ".mp4"
+		os.Rename(path+mp4FileName, path+finalFileName)
 	} else {
-		//use ffmpeg
-		log.Printf("[%s] Executing ffmpeg: %s", channel, "ffmpeg -y -i "+m3u8+" -c copy -copyts -start_at_zero -bsf:a aac_adtstoasc -f mp4 "+path+fileName)
-		cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "warning", "-y", "-rw_timeout", "3000000", "-i", m3u8, "-c", "copy", "-copyts", "-start_at_zero", "-bsf:a", "aac_adtstoasc", "-f", "mp4", path+fileName)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Run()
-		log.Printf("[%s] Finished downloading.. Saved at: %s", channel, path+fileName)
-	}
-
-	if len(stream.StreamsData) == 0 {
-		return errors.New(channel + "'s stream object not found..")
-	}
-
-	new_fileName := stream.StreamsData[0].Id + ".mp4"
-	e := os.Rename(path+fileName, path+new_fileName)
-	if e != nil {
-		return err
+		finalFileName = date + ".mp4"
+		os.Rename(path+mp4FileName, path+finalFileName)
 	}
 
 	if upload_to_drive {
 		go func() {
-			err := uploadToDrive(path, new_fileName, channel, stream.StreamsData[0].Id)
+			err := uploadToDrive(path, finalFileName, channel, stream.StreamsData[0].Id)
 			if err != nil {
 				log.Printf("[%s] %v", channel, err)
 			}
