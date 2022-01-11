@@ -857,10 +857,11 @@ func record(m3u8 string, channel string) error {
 	if !fileExists(path) {
 		os.MkdirAll(path, 0777)
 	}
-	fileName := date + ".mp4"
+	fileName := date + ".m3u8"
 
 	if fileExists(path + fileName) {
-		os.Remove(path + fileName)
+		os.RemoveAll(path)
+		os.MkdirAll(path, 0777)
 	}
 
 	var stream *Streams
@@ -888,8 +889,11 @@ func record(m3u8 string, channel string) error {
 		cmd.Run()
 	} else {
 		//use ffmpeg
-		log.Printf("[%s] Executing ffmpeg: %s", channel, "ffmpeg -y -i "+m3u8+" -c copy -copyts -start_at_zero -bsf:a aac_adtstoasc -f mp4 "+path+fileName)
-		cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "warning", "-y", "-rw_timeout", "3000000", "-i", m3u8, "-c", "copy", "-copyts", "-start_at_zero", "-bsf:a", "aac_adtstoasc", "-f", "mp4", path+fileName)
+		log.Printf("[%s] Executing ffmpeg: %s", channel, "ffmpeg -y -i "+m3u8+" -c copy -copyts -start_at_zero -hls_time 10 -hls_flags +append_list -hls_playlist_type event -hls_segment_filename "+path+"%d.ts -f hls "+path+fileName)
+		cmd := exec.Command(
+			"ffmpeg", "-hide_banner", "-loglevel", "warning", "-y",
+			"-rw_timeout", "3000000", "-i", m3u8, "-c", "copy", "-copyts", "-start_at_zero",
+			"-hls_time", "10", "-hls_flags", "+append_list", "-hls_playlist_type", "event", "-hls_segment_filename", path+"%d.ts", "-f", "hls", path+fileName)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Run()
@@ -901,7 +905,7 @@ func record(m3u8 string, channel string) error {
 	}
 
 	time.Sleep(3 * time.Second)
-	new_fileName := stream.StreamsData[0].Id + ".mp4"
+	new_fileName := stream.StreamsData[0].Id + ".m3u8"
 	e := os.Rename(path+fileName, path+new_fileName)
 	if e != nil {
 		return err
@@ -909,15 +913,23 @@ func record(m3u8 string, channel string) error {
 
 	if upload_to_drive {
 		go func() {
-			driveId, err := uploadToDrive(path, new_fileName, channel, stream.StreamsData[0].Id)
+			mp4_fileName := stream.StreamsData[0].Id + ".mp4"
+			log.Printf("[%s] Executing ffmpeg: %s", channel, "ffmpeg -y -i "+path+new_fileName+" -c copy -copyts -start_at_zero -bsf:a aac_adtstoasc -f mp4 "+path+mp4_fileName)
+			cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "warning", "-y", "-rw_timeout", "3000000", "-i", path+new_fileName, "-c", "copy", "-copyts", "-start_at_zero", "-bsf:a", "aac_adtstoasc", "-f", "mp4", path+mp4_fileName)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			cmd.Run()
+			log.Printf("[%s] Converted m3u8 to mp4.. Saved at: %s", channel, path+mp4_fileName)
+
+			driveId, err := uploadToDrive(path, mp4_fileName, channel, stream.StreamsData[0].Id)
 			if err != nil {
 				log.Printf("[%s] %v", channel, err)
 			}
 			//post to api
-			err = postToApi(channel, stream.StreamsData[0].Id, driveId, path+new_fileName)
+			err = postToApi(channel, stream.StreamsData[0].Id, driveId, path+mp4_fileName)
 			if err != nil {
 				log.Printf("[%s] %v", channel, err)
-				os.Remove(path + new_fileName)
+				os.Remove(path + mp4_fileName)
 			}
 		}()
 	}
