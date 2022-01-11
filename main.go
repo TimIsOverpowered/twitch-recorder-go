@@ -41,7 +41,6 @@ const (
 	BTTV_CDN            = "https://cdn.betterttv.net"
 	FFZ_API             = "https://api.frankerfacez.com/v1"
 	FFZ_CDN             = "https://cdn.frankerfacez.com"
-	ARCHIVE_API         = "https://archive.overpowered.tv"
 )
 
 type Config struct {
@@ -59,8 +58,11 @@ type Config struct {
 		TokenType     string    `json:"token_type"`
 		Expiry        time.Time `json:"expiry"`
 	} `json:"drive"`
-	ArchiveApiKey string `json:"archive_api_key"`
-	Google        struct {
+	Archive struct {
+		ApiKey   string `json:"api_key"`
+		Hostname string `json:"hostname"`
+	}
+	Google struct {
 		ClientId     string   `json:"client_id"`
 		ClientSecret string   `json:"client_secret"`
 		Scopes       []string `json:"scopes"`
@@ -1032,9 +1034,9 @@ func postToApi(channel string, streamId string, driveId string, path string) err
 	resp, _ := client.R().
 		SetHeader("Accept", "application/json").
 		SetHeader("Content-Type", "application/json").
-		SetHeader("Authorization", "Bearer "+config.ArchiveApiKey).
+		SetHeader("Authorization", "Bearer "+config.Archive.ApiKey).
 		SetBody(body).
-		Post(ARCHIVE_API + "/" + channel + "/v2/" + "live")
+		Post("https://" + config.Archive.Hostname + "/v2/" + "live")
 
 	if resp.StatusCode() != 200 {
 		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
