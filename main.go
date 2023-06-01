@@ -32,7 +32,7 @@ const (
 	TWITCH_API_BASE   = "https://api.twitch.tv/helix"
 	TWITCH_ID_API     = "https://id.twitch.tv"
 	TWITCH_GQL_API    = "https://gql.twitch.tv/gql"
-	TWITCH_CLIENT_ID  = "kimne78kx3ncx6brgo4mv6wki5h1ko"
+	TWITCH_CLIENT_ID  = "kd1unb4b3q4t58fwlpcbzcbnm76a8fp"
 	TWITCH_USHER_M3U8 = "https://usher.ttvnw.net"
 )
 
