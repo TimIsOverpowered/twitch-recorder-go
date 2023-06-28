@@ -238,7 +238,7 @@ func uploadToDrive(path string, fileName string, channel string, streamId string
 				continue
 			}
 			if strings.EqualFold(file.Name, streamId) {
-				log.Printf("[%s] Found stream id folder %s", platform, channel, file.Id)
+				log.Printf("[%s] [%s] Found stream id folder %s", platform, channel, file.Id)
 				streamIdFolder = file.Id
 				continue
 			}
