@@ -6,8 +6,14 @@
     },
     "vod_directory": "YOUR_VOD_DIRECTORY", //FULL PATH TO DIRECTORY
     "channels": [ //CHANNELS YOU WANT TO RECORD
-        "pokelawls", 
-        "sodapoppin",
+        {
+            "name": "sodapoppin",
+            "platform": "twitch"
+        },
+        {
+            "name": "xqc",
+            "platform": "kick"
+        }
     ],
     "twitch_app": { //CAN LEAVE EMPTY, IT WILL GENERATE ON LAUNCH.
         
