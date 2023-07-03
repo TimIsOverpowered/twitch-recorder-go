@@ -73,6 +73,10 @@ func TwitchInterval(channel string, token *Platform.TwitchTokenSig) {
 
 	if err := json.Unmarshal([]byte(token.Data.Token.Value), &value); err != nil {
 		log.Printf("[Twitch] [%s] Something went wrong trying to get token sig expiration.. %v", channel, err)
+		time.AfterFunc(6*time.Second, func() {
+			TwitchInterval(channel, nil)
+		})
+		return
 	}
 
 	if time.Now().Unix() >= value.Expires {
