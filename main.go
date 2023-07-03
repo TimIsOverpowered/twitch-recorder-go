@@ -171,6 +171,10 @@ func Interval(channel string, token *TokenSig) {
 
 	if err := json.Unmarshal([]byte(token.Data.Token.Value), &value); err != nil {
 		log.Printf("[%s] Something went wrong trying to get token sig expiration.. %v", channel, err)
+		time.AfterFunc(6*time.Second, func() {
+			Interval(channel, nil)
+		})
+		return
 	}
 
 	if time.Now().Unix() >= value.Expires {
