@@ -173,6 +173,7 @@ func Interval(channel string, token *TokenSig) {
 		time.AfterFunc(6*time.Second, func() {
 			Interval(channel, nil)
 		})
+		return
 	}
 
 	if time.Now().Unix() >= value.Expires {
