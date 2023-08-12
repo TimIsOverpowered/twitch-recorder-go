@@ -494,7 +494,14 @@ func record(m3u8 string, channel string) error {
 			err = postToApi(channel, stream.StreamsData[0].Id, driveId, path+new_fileName)
 			if err != nil {
 				log.Printf("[%s] %v", channel, err)
-				os.Remove(path + new_fileName)
+			}
+		}()
+	} else {
+		go func() {
+			//post to api
+			err = postToApi(channel, stream.StreamsData[0].Id, "", path+new_fileName)
+			if err != nil {
+				log.Printf("[%s] %v", channel, err)
 			}
 		}()
 	}
@@ -606,7 +613,12 @@ func postToApi(channel string, streamId string, driveId string, path string) err
 	log.Printf("[%s] Posting to API", channel)
 	client := resty.New()
 
-	body := []byte(fmt.Sprintf(`{"driveId":"%s","streamId":"%s","path":"%s"}`, driveId, streamId, path))
+	var body []byte
+	if driveId == "" {
+		body = []byte(fmt.Sprintf(`{"streamId":"%s","path":"%s"}`, streamId, path))
+	} else {
+		body = []byte(fmt.Sprintf(`{"driveId":"%s","streamId":"%s","path":"%s"}`, driveId, streamId, path))
+	}
 
 	resp, _ := client.R().
 		SetHeader("Accept", "application/json").
