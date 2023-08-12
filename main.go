@@ -519,7 +519,22 @@ func record(m3u8 string, channel string) error {
 			err = postToApi(channel, stream.StreamsData[0].Id, driveId, new_path+mp4_fileName)
 			if err != nil {
 				log.Printf("[%s] %v", channel, err)
-				os.Remove(new_path + mp4_fileName)
+			}
+		}()
+	} else {
+		go func() {
+			mp4_fileName := stream.StreamsData[0].Id + ".mp4"
+			log.Printf("[%s] Executing ffmpeg: %s", channel, "ffmpeg -y -i "+new_path+new_fileName+" -c copy -copyts -start_at_zero -bsf:a aac_adtstoasc -f mp4 "+new_path+mp4_fileName)
+			cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "warning", "-y", "-rw_timeout", "3000000", "-i", new_path+new_fileName, "-c", "copy", "-copyts", "-start_at_zero", "-bsf:a", "aac_adtstoasc", "-f", "mp4", new_path+mp4_fileName)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			cmd.Run()
+			log.Printf("[%s] Converted m3u8 to mp4.. Saved at: %s", channel, new_path+mp4_fileName)
+
+			//post to api
+			err = postToApi(channel, stream.StreamsData[0].Id, "", new_path+mp4_fileName)
+			if err != nil {
+				log.Printf("[%s] %v", channel, err)
 			}
 		}()
 	}
@@ -631,7 +646,12 @@ func postToApi(channel string, streamId string, driveId string, path string) err
 	log.Printf("[%s] Posting to API", channel)
 	client := resty.New()
 
-	body := []byte(fmt.Sprintf(`{"driveId":"%s","streamId":"%s","path":"%s"}`, driveId, streamId, path))
+	var body []byte
+	if driveId == "" {
+		body = []byte(fmt.Sprintf(`{"streamId":"%s","path":"%s"}`, streamId, path))
+	} else {
+		body = []byte(fmt.Sprintf(`{"driveId":"%s","streamId":"%s","path":"%s"}`, driveId, streamId, path))
+	}
 
 	resp, _ := client.R().
 		SetHeader("Accept", "application/json").
