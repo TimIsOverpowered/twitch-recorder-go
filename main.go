@@ -445,12 +445,16 @@ func record(m3u8 string, channel string) error {
 	var stream *Streams
 	var err error
 
+	quit := make(chan bool)
 	go func() {
 		stream, err = getStreamObject(channel)
 		if err != nil {
 			log.Printf("[%s] %v", channel, err)
 		}
 		for len(stream.StreamsData) == 0 {
+			if <-quit {
+				break
+			}
 			stream, err = getStreamObject(channel)
 			if err != nil {
 				log.Printf("[%s] %v", channel, err)
@@ -478,7 +482,14 @@ func record(m3u8 string, channel string) error {
 		log.Printf("[%s] Finished downloading.. Saved at: %s", channel, path+fileName)
 	}
 
+	//fix potential panic when streams index m3u8 is 200, but not actually live..
+	if stream == nil {
+		quit <- true
+		return errors.New(channel + "'s stream object not found..")
+	}
+
 	if len(stream.StreamsData) == 0 {
+		quit <- true
 		return errors.New(channel + "'s stream object not found..")
 	}
 
