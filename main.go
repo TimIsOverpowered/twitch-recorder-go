@@ -456,6 +456,7 @@ func record(m3u8 string, channel string) error {
 			}
 			time.Sleep(5 * time.Second)
 		}
+		log.Printf("[%s] Got Stream Object", channel)
 	}()
 
 	if !use_ffmpeg {
@@ -474,10 +475,12 @@ func record(m3u8 string, channel string) error {
 		log.Printf("[%s] Finished downloading.. Saved at: %s", channel, path+fileName)
 	}
 
+	time.Sleep(1 * time.Second)
+
 	//fix potential panic when streams index m3u8 is 200, but not actually live..
 	if stream == nil {
 		quit <- true
-		return errors.New(channel + "'s stream object not found..")
+		return errors.New(channel + "'s stream object was nil")
 	}
 
 	if len(stream.StreamsData) == 0 {
