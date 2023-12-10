@@ -437,24 +437,22 @@ func record(m3u8 string, channel string) error {
 		os.Remove(path + fileName)
 	}
 
-	var stream *Streams
+	stream := &Streams{}
 	var err error
 
 	quit := make(chan bool)
 	go func() {
-		stream, err = getStreamObject(channel)
-		if err != nil {
-			log.Printf("[%s] %v", channel, err)
-		}
 		for len(stream.StreamsData) == 0 {
-			if <-quit {
-				break
+			select {
+			case <-quit:
+				return
+			default:
+				stream, err = getStreamObject(channel)
+				if err != nil {
+					log.Printf("[%s] %v", channel, err)
+				}
+				time.Sleep(5 * time.Second)
 			}
-			stream, err = getStreamObject(channel)
-			if err != nil {
-				log.Printf("[%s] %v", channel, err)
-			}
-			time.Sleep(5 * time.Second)
 		}
 		log.Printf("[%s] Got Stream Object", channel)
 	}()
@@ -473,14 +471,6 @@ func record(m3u8 string, channel string) error {
 		cmd.Stderr = os.Stderr
 		cmd.Run()
 		log.Printf("[%s] Finished downloading.. Saved at: %s", channel, path+fileName)
-	}
-
-	time.Sleep(1 * time.Second)
-
-	//fix potential panic when streams index m3u8 is 200, but not actually live..
-	if stream == nil {
-		quit <- true
-		return errors.New(channel + "'s stream object was nil")
 	}
 
 	if len(stream.StreamsData) == 0 {
