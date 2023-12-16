@@ -258,42 +258,6 @@ type Vod struct {
 	} `json:"data"`
 }
 
-func getVodObject(channel string) (*Vod, error) {
-	//Check if APP Access token has expired.. If so, refresh it.
-	tokenExpired := checkAccessToken()
-	if tokenExpired {
-		err := refreshTwitchToken(channel)
-		for err != nil {
-			time.Sleep(5 * time.Second)
-			err = refreshTwitchToken(channel)
-			log.Println("Client-Id or Client-Secret may be incorrect!")
-		}
-	}
-
-	user := getUserObject(channel)
-
-	log.Printf("[%s] Getting vod object", channel)
-	client := resty.New()
-
-	resp, _ := client.R().
-		SetHeader("Accept", "application/json").
-		SetAuthToken(config.TwitchToken.AccessToken).
-		SetHeader("Client-ID", config.Twitch.ClientId).
-		Get(TWITCH_API_BASE + "/videos/?user_id=" + user.UserData[0].User_id)
-
-	if resp.StatusCode() != 200 {
-		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
-	}
-
-	var vod Vod
-	err := json.Unmarshal(resp.Body(), &vod)
-	if err != nil {
-		return nil, err
-	}
-
-	return &vod, err
-}
-
 func checkAccessToken() bool {
 	log.Printf("Checking Twitch App Access Token\n")
 
