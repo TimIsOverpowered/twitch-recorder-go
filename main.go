@@ -427,9 +427,9 @@ func record(m3u8 string, channel string) error {
 	log.Printf("[%s] is live. %s", channel, date)
 	var path string
 	if runtime.GOOS == "windows" {
-		path = config.Vod_directory + "\\" + channel + "\\"
+		path = config.Vod_directory + "\\" + channel + "\\" + date + "\\"
 	} else {
-		path = config.Vod_directory + "/" + channel + "/"
+		path = config.Vod_directory + "/" + channel + "/" + date + "/"
 	}
 	if !fileExists(path) {
 		os.MkdirAll(path, 0777)
