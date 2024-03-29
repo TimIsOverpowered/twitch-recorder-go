@@ -535,7 +535,7 @@ func record(m3u8 string, channel string) error {
 			log.Printf("[%s] Converted m3u8 to mp4.. Saved at: %s", channel, new_path+mp4_fileName)
 
 			//post to api
-			err = postToApi(channel, stream.StreamsData[0].Id, "", path+mp4_fileName)
+			err = postToApi(channel, stream.StreamsData[0].Id, "", new_path+mp4_fileName)
 			if err != nil {
 				log.Printf("[%s] %v", channel, err)
 			}
