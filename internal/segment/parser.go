@@ -90,7 +90,9 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 
 		if len(mediaPlaylist.Segments) > 0 && mediaPlaylist.Segments[0] != nil {
 			firstSeg := mediaPlaylist.Segments[0].URI
-			if strings.HasSuffix(firstSeg, ".mp4") {
+			// Strip query params for format detection
+			baseURL := strings.Split(firstSeg, "?")[0]
+			if strings.HasSuffix(baseURL, ".mp4") {
 				pp.format = "mp4"
 				log.Debugf("Detected fMP4 format")
 			} else {

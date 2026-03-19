@@ -130,11 +130,17 @@ func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 
 		initURI := downloader.GetInitSegment()
 		if initURI != "" && !initSegmentDownloaded {
-			log.Info("Downloading init segment...")
-			if err := downloader.DownloadSegment(ctx, initURI, 1); err != nil {
-				log.Errorf("Failed to download init segment: %v", err)
-			} else {
+			metadata, _ := downloader.LoadSessionMetadata()
+			if metadata != nil && metadata.FileCounter > 0 {
+				log.Debugf("Skipping init segment (already downloaded in previous session)")
 				initSegmentDownloaded = true
+			} else {
+				log.Info("Downloading init segment...")
+				if err := downloader.DownloadSegment(ctx, initURI, 1); err != nil {
+					log.Errorf("Failed to download init segment: %v", err)
+				} else {
+					initSegmentDownloaded = true
+				}
 			}
 		}
 
