@@ -10,13 +10,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/go-resty/resty/v2"
 	"twitch-recorder-go/internal/config"
 	"twitch-recorder-go/internal/log"
 	"twitch-recorder-go/internal/metrics"
 	"twitch-recorder-go/internal/recorder"
 	"twitch-recorder-go/internal/segment"
 	"twitch-recorder-go/internal/twitch"
+
+	"github.com/go-resty/resty/v2"
 )
 
 var (
@@ -86,7 +87,7 @@ func main() {
 			continue
 		}
 		if user == nil {
-			log.Info("%s does not exist", channel)
+			log.Infof("%s does not exist", channel)
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
@@ -122,7 +123,7 @@ func main() {
 	recordersMu.RUnlock()
 
 	printMetrics(m)
-	log.Info("Shutting down gracefully...")
+	log.Infof("Shutting down gracefully...")
 }
 
 func loadConfig(configPath string) (*config.Config, error) {
@@ -130,7 +131,7 @@ func loadConfig(configPath string) (*config.Config, error) {
 		if err := generateDefaultConfig(configPath); err != nil {
 			return nil, err
 		}
-		log.Info("Configuration file created. Please edit it and run again.")
+		log.Infof("Configuration file created. Please edit it and run again.")
 		os.Exit(0)
 	}
 
@@ -168,56 +169,56 @@ func overrideWithEnv(cfgVal, envVal string) string {
 
 func printMetrics(m *metrics.Metrics) {
 	stats := m.GetStats()
-	log.Info("========================================")
-	log.Info("METRICS SUMMARY")
-	log.Info("========================================")
-	log.Info("Uptime: %v", stats.Uptime)
-	log.Info("")
-	log.Info("DOWNLOAD STATS:")
-	log.Info("  Segments Downloaded: %d", stats.SegmentsDownloaded)
+	log.Infof("========================================")
+	log.Infof("METRICS SUMMARY")
+	log.Infof("========================================")
+	log.Infof("Uptime: %v", stats.Uptime)
+	log.Infof("")
+	log.Infof("DOWNLOAD STATS:")
+	log.Infof("  Segments Downloaded: %d", stats.SegmentsDownloaded)
 	log.Infof("  Segments Failed: %d", stats.SegmentsFailed)
 	log.Infof("  Bytes Downloaded: %.2f MB", float64(stats.BytesDownloaded)/1024/1024)
 	log.Infof("  Success Rate: %.1f%%", stats.DownloadSuccessRate)
 	log.Infof("  Avg Download Duration: %v", stats.AvgDownloadDuration)
-	log.Info("")
-	log.Info("API STATS:")
+	log.Infof("")
+	log.Infof("API STATS:")
 	log.Infof("  Total API Calls: %d", stats.APICallsTotal)
 	log.Infof("  Failed API Calls: %d", stats.APICallsFailed)
 	log.Infof("  API Quota Used: %d", stats.APIQuotaUsed)
 	if !stats.LastAPICallTime.IsZero() {
 		log.Infof("  Last API Call: %v ago", time.Since(stats.LastAPICallTime))
 	}
-	log.Info("")
-	log.Info("GQL STATS:")
+	log.Infof("")
+	log.Infof("GQL STATS:")
 	log.Infof("  Total GQL Calls: %d", stats.GQLCallsTotal)
 	log.Infof("  Failed GQL Calls: %d", stats.GQLCallsFailed)
-	log.Info("")
-	log.Info("RECORDING STATS:")
+	log.Infof("")
+	log.Infof("RECORDING STATS:")
 	log.Infof("  Recordings Started: %d", stats.RecordingsStarted)
 	log.Infof("  Recordings Completed: %d", stats.RecordingsCompleted)
 	log.Infof("  Recordings Failed: %d", stats.RecordingsFailed)
 	log.Infof("  Total Recording Duration: %v", stats.TotalRecordingDuration)
-	log.Info("")
-	log.Info("STREAM MONITORING:")
+	log.Infof("")
+	log.Infof("STREAM MONITORING:")
 	log.Infof("  Streams Checked: %d", stats.StreamsChecked)
 	log.Infof("  Streams Online: %d", stats.StreamsOnline)
 	log.Infof("  Streams Offline: %d", stats.StreamsOffline)
-	log.Info("")
-	log.Info("ARCHIVE API STATS:")
+	log.Infof("")
+	log.Infof("ARCHIVE API STATS:")
 	log.Infof("  Total API Posts: %d", stats.ArchiveAPICallsTotal)
 	log.Infof("  Failed API Posts: %d", stats.ArchiveAPICallsFailed)
 	if !stats.ArchiveAPILastCallTime.IsZero() {
 		log.Infof("  Last API Post: %v ago", time.Since(stats.ArchiveAPILastCallTime))
 	}
-	log.Info("")
-	log.Info("GOOGLE DRIVE STATS:")
+	log.Infof("")
+	log.Infof("GOOGLE DRIVE STATS:")
 	log.Infof("  Total Uploads: %d", stats.DriveUploadsTotal)
 	log.Infof("  Failed Uploads: %d", stats.DriveUploadsFailed)
 	log.Infof("  Bytes Uploaded: %.2f MB", float64(stats.DriveBytesUploaded)/1024/1024)
 	if !stats.DriveLastUploadTime.IsZero() {
 		log.Infof("  Last Upload: %v ago", time.Since(stats.DriveLastUploadTime))
 	}
-	log.Info("========================================")
+	log.Infof("========================================")
 }
 
 func generateDefaultConfig(configPath string) error {

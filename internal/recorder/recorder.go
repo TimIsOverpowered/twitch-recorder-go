@@ -73,11 +73,11 @@ func (r *Recorder) MonitorChannel(ctx context.Context) error {
 func (r *Recorder) checkAndRecord(ctx context.Context) error {
 	m3u8URL, err := r.twitchClient.GetLiveM3U8(ctx, r.channel)
 	if err != nil {
-		log.Debugf("Channel %s is not live", r.channel)
+		log.Errorf("[%s] %v", r.channel, err)
 		return nil
 	}
 
-	log.Infof("%s is LIVE! Starting recording...", r.channel)
+	log.Infof("[%s] is LIVE! Starting recording...", r.channel)
 	return r.recordStream(ctx, m3u8URL)
 }
 

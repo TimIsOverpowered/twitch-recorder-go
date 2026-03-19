@@ -3,6 +3,7 @@ package twitch
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -270,7 +271,7 @@ func (c *Client) GetLiveTokenSig(ctx context.Context, channel string) (*TokenSig
 	}
 
 	var response TokenSig
-	resp, err := req.SetResult(&response).Post(TwitchGQLAPI)
+	resp, err := req.Post(TwitchGQLAPI)
 
 	if err != nil {
 		if c.metrics != nil {
@@ -290,12 +291,13 @@ func (c *Client) GetLiveTokenSig(ctx context.Context, channel string) (*TokenSig
 		c.metrics.RecordGQLCall(true)
 	}
 
-	if response.Data.StreamPlaybackAccessToken == nil || response.Data.StreamPlaybackAccessToken.Value == "" {
-		return nil, errors.New("channel is not live")
+	// Manually unmarshal the response
+	if err := json.Unmarshal(resp.Body(), &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal GQL response: %w", err)
 	}
 
-	if !response.Data.StreamPlaybackAccessToken.IsEnabled {
-		return nil, errors.New("channel is not live")
+	if response.Data.StreamPlaybackAccessToken == nil || response.Data.StreamPlaybackAccessToken.Value == "" {
+		return nil, errors.New("failed to get live token sig")
 	}
 
 	return &response, nil
@@ -310,7 +312,7 @@ func (c *Client) GetCachedToken(ctx context.Context, channel string) (*CachedTok
 		return cached, nil
 	}
 
-	log.Debugf("Fetching new token for channel %s", channel)
+	log.Infof("Fetching new token for channel %s", channel)
 	tokenSig, err := c.GetLiveTokenSig(ctx, channel)
 	if err != nil {
 		return nil, err
@@ -363,12 +365,7 @@ func (c *Client) GetLiveM3U8(ctx context.Context, channel string) (string, error
 		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode())
 	}
 
-	body := &bytes.Buffer{}
-	_, err = body.ReadFrom(resp.RawBody())
-	if err != nil {
-		return "", fmt.Errorf("failed to read m3u8 body: %w", err)
-	}
-
+	body := bytes.NewReader(resp.Body())
 	playlist, listType, err := m3u8.DecodeFrom(body, true)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode m3u8: %w", err)
