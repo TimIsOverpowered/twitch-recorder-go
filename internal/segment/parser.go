@@ -84,7 +84,7 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 		if mediaPlaylist.Map != nil && pp.initSegment == "" {
 			pp.initSegment = mediaPlaylist.Map.URI
 			pp.downloader.SetInitSegment(pp.initSegment)
-			log.Info("Found init segment: %s", pp.initSegment)
+			log.Infof("Found init segment: %s", pp.initSegment)
 		}
 
 		if len(mediaPlaylist.Segments) > 0 {
@@ -110,7 +110,7 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 				if !pp.downloader.AddSegment(segment.URI) {
 					continue
 				}
-				log.Debug("New segment found: %s", segment.URI)
+				log.Debugf("New segment found: %s", segment.URI)
 			}
 		}
 
@@ -151,7 +151,7 @@ func (pp *PlaylistParser) DownloadAllSegments(ctx context.Context, concurrency i
 			defer func() { <-semaphore }()
 
 			if err := pp.downloader.DownloadSegment(ctx, segmentURL); err != nil {
-				log.Error("Failed to download segment: %v", err)
+				log.Errorf("Failed to download segment: %v", err)
 			}
 		}(url)
 	}

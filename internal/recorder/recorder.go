@@ -64,7 +64,7 @@ func (r *Recorder) MonitorChannel(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			if err := r.checkAndRecord(ctx); err != nil {
-				log.Error("Error checking channel %s: %v", r.channel, err)
+				log.Errorf("Error checking channel %s: %v", r.channel, err)
 			}
 		}
 	}
@@ -73,11 +73,11 @@ func (r *Recorder) MonitorChannel(ctx context.Context) error {
 func (r *Recorder) checkAndRecord(ctx context.Context) error {
 	m3u8URL, err := r.twitchClient.GetLiveM3U8(ctx, r.channel)
 	if err != nil {
-		log.Debug("Channel %s is not live", r.channel)
+		log.Debugf("Channel %s is not live", r.channel)
 		return nil
 	}
 
-	log.Info("%s is LIVE! Starting recording...", r.channel)
+	log.Infof("%s is LIVE! Starting recording...", r.channel)
 	return r.recordStream(ctx, m3u8URL)
 }
 
@@ -92,7 +92,7 @@ func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 	}
 
 	sessionDir := downloader.GetSessionDir()
-	log.Info("Recording session: %s", sessionDir)
+	log.Infof("Recording session: %s", sessionDir)
 
 	streamIDChan := make(chan string, 1)
 	go r.pollStreamID(ctx, streamIDChan)
@@ -109,12 +109,12 @@ func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 			}
 			return r.finalizeRecording(downloader, sessionDir, streamIDChan, startTime)
 		case streamID := <-streamIDChan:
-			log.Info("Stream ID: %s", streamID)
+			log.Infof("Stream ID: %s", streamID)
 		default:
 		}
 
 		if err := parser.FetchNewSegments(ctx, m3u8URL); err != nil {
-			log.Error("Error fetching playlist: %v", err)
+			log.Errorf("Error fetching playlist: %v", err)
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -132,7 +132,7 @@ func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 		if initURI != "" && !initSegmentDownloaded {
 			log.Info("Downloading init segment...")
 			if err := downloader.DownloadSegment(ctx, initURI); err != nil {
-				log.Error("Failed to download init segment: %v", err)
+				log.Errorf("Failed to download init segment: %v", err)
 			} else {
 				initSegmentDownloaded = true
 			}
@@ -196,14 +196,14 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 		result := <-resultChan
 
 		if result.Err != nil {
-			log.Error("Failed to finalize recording for %s: %v", r.channel, result.Err)
+			log.Errorf("Failed to finalize recording for %s: %v", r.channel, result.Err)
 			if r.metrics != nil {
 				r.metrics.RecordRecordingFailure()
 			}
 			return
 		}
 
-		log.Info("Recording saved: %s", result.OutputFile)
+		log.Infof("Recording saved: %s", result.OutputFile)
 
 		duration := time.Since(startTime)
 		if r.metrics != nil {
@@ -225,7 +225,7 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 			}
 
 			if err != nil {
-				log.Warn("[%s] Failed to upload to Drive: %v", r.channel, err)
+				log.Warnf("[%s] Failed to upload to Drive: %v", r.channel, err)
 			}
 		}
 

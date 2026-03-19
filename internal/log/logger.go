@@ -8,9 +8,21 @@ import (
 
 var Logger *slog.Logger
 
-func Init() {
+func Init(level string) {
+	var slogLevel slog.Level
+	switch level {
+	case "error":
+		slogLevel = slog.LevelError
+	case "warn":
+		slogLevel = slog.LevelWarn
+	case "debug":
+		slogLevel = slog.LevelDebug
+	default:
+		slogLevel = slog.LevelInfo
+	}
+
 	Logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level: slogLevel,
 	}))
 }
 

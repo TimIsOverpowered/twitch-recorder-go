@@ -48,20 +48,23 @@ func init() {
 }
 
 func main() {
-	log.Init()
+	var logLevel string
 
 	flag.BoolVar(&uploadToDrive, "drive", false, "Upload recordings to Google Drive")
 	flag.StringVar(&cfgPath, "config", "config.json", "Path to config file")
+	flag.StringVar(&logLevel, "loglevel", "info", "Log level: error, warn, info, debug")
 	flag.Parse()
+
+	log.Init(logLevel)
 
 	c, err := loadConfig(cfgPath)
 	if err != nil {
-		log.Error("Failed to load config: %v", err)
+		log.Errorf("Failed to load config: %v", err)
 		os.Exit(1)
 	}
 
 	if err := segment.ValidateConfig(c.VodDirectory, c.Channels); err != nil {
-		log.Error("Invalid configuration: %v", err)
+		log.Errorf("Invalid configuration: %v", err)
 		os.Exit(1)
 	}
 
@@ -172,47 +175,47 @@ func printMetrics(m *metrics.Metrics) {
 	log.Info("")
 	log.Info("DOWNLOAD STATS:")
 	log.Info("  Segments Downloaded: %d", stats.SegmentsDownloaded)
-	log.Info("  Segments Failed: %d", stats.SegmentsFailed)
-	log.Info("  Bytes Downloaded: %.2f MB", float64(stats.BytesDownloaded)/1024/1024)
-	log.Info("  Success Rate: %.1f%%", stats.DownloadSuccessRate)
-	log.Info("  Avg Download Duration: %v", stats.AvgDownloadDuration)
+	log.Infof("  Segments Failed: %d", stats.SegmentsFailed)
+	log.Infof("  Bytes Downloaded: %.2f MB", float64(stats.BytesDownloaded)/1024/1024)
+	log.Infof("  Success Rate: %.1f%%", stats.DownloadSuccessRate)
+	log.Infof("  Avg Download Duration: %v", stats.AvgDownloadDuration)
 	log.Info("")
 	log.Info("API STATS:")
-	log.Info("  Total API Calls: %d", stats.APICallsTotal)
-	log.Info("  Failed API Calls: %d", stats.APICallsFailed)
-	log.Info("  API Quota Used: %d", stats.APIQuotaUsed)
+	log.Infof("  Total API Calls: %d", stats.APICallsTotal)
+	log.Infof("  Failed API Calls: %d", stats.APICallsFailed)
+	log.Infof("  API Quota Used: %d", stats.APIQuotaUsed)
 	if !stats.LastAPICallTime.IsZero() {
-		log.Info("  Last API Call: %v ago", time.Since(stats.LastAPICallTime))
+		log.Infof("  Last API Call: %v ago", time.Since(stats.LastAPICallTime))
 	}
 	log.Info("")
 	log.Info("GQL STATS:")
-	log.Info("  Total GQL Calls: %d", stats.GQLCallsTotal)
-	log.Info("  Failed GQL Calls: %d", stats.GQLCallsFailed)
+	log.Infof("  Total GQL Calls: %d", stats.GQLCallsTotal)
+	log.Infof("  Failed GQL Calls: %d", stats.GQLCallsFailed)
 	log.Info("")
 	log.Info("RECORDING STATS:")
-	log.Info("  Recordings Started: %d", stats.RecordingsStarted)
-	log.Info("  Recordings Completed: %d", stats.RecordingsCompleted)
-	log.Info("  Recordings Failed: %d", stats.RecordingsFailed)
-	log.Info("  Total Recording Duration: %v", stats.TotalRecordingDuration)
+	log.Infof("  Recordings Started: %d", stats.RecordingsStarted)
+	log.Infof("  Recordings Completed: %d", stats.RecordingsCompleted)
+	log.Infof("  Recordings Failed: %d", stats.RecordingsFailed)
+	log.Infof("  Total Recording Duration: %v", stats.TotalRecordingDuration)
 	log.Info("")
 	log.Info("STREAM MONITORING:")
-	log.Info("  Streams Checked: %d", stats.StreamsChecked)
-	log.Info("  Streams Online: %d", stats.StreamsOnline)
-	log.Info("  Streams Offline: %d", stats.StreamsOffline)
+	log.Infof("  Streams Checked: %d", stats.StreamsChecked)
+	log.Infof("  Streams Online: %d", stats.StreamsOnline)
+	log.Infof("  Streams Offline: %d", stats.StreamsOffline)
 	log.Info("")
 	log.Info("ARCHIVE API STATS:")
-	log.Info("  Total API Posts: %d", stats.ArchiveAPICallsTotal)
-	log.Info("  Failed API Posts: %d", stats.ArchiveAPICallsFailed)
+	log.Infof("  Total API Posts: %d", stats.ArchiveAPICallsTotal)
+	log.Infof("  Failed API Posts: %d", stats.ArchiveAPICallsFailed)
 	if !stats.ArchiveAPILastCallTime.IsZero() {
-		log.Info("  Last API Post: %v ago", time.Since(stats.ArchiveAPILastCallTime))
+		log.Infof("  Last API Post: %v ago", time.Since(stats.ArchiveAPILastCallTime))
 	}
 	log.Info("")
 	log.Info("GOOGLE DRIVE STATS:")
-	log.Info("  Total Uploads: %d", stats.DriveUploadsTotal)
-	log.Info("  Failed Uploads: %d", stats.DriveUploadsFailed)
-	log.Info("  Bytes Uploaded: %.2f MB", float64(stats.DriveBytesUploaded)/1024/1024)
+	log.Infof("  Total Uploads: %d", stats.DriveUploadsTotal)
+	log.Infof("  Failed Uploads: %d", stats.DriveUploadsFailed)
+	log.Infof("  Bytes Uploaded: %.2f MB", float64(stats.DriveBytesUploaded)/1024/1024)
 	if !stats.DriveLastUploadTime.IsZero() {
-		log.Info("  Last Upload: %v ago", time.Since(stats.DriveLastUploadTime))
+		log.Infof("  Last Upload: %v ago", time.Since(stats.DriveLastUploadTime))
 	}
 	log.Info("========================================")
 }

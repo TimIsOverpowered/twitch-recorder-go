@@ -19,7 +19,7 @@ func RecoverIncompleteSessions(vodDirectory string, channels []string) {
 
 		sessions, err := filepath.Glob(filepath.Join(channelDir, fmt.Sprintf("%s_*", channel)))
 		if err != nil {
-			log.Error("Failed to scan sessions for %s: %v", channel, err)
+			log.Errorf("Failed to scan sessions for %s: %v", channel, err)
 			continue
 		}
 
@@ -28,7 +28,7 @@ func RecoverIncompleteSessions(vodDirectory string, channels []string) {
 				continue
 			}
 
-			log.Info("Found incomplete session: %s", sessionDir)
+			log.Infof("Found incomplete session: %s", sessionDir)
 
 			downloader := &SegmentDownloader{
 				sessionDir: filepath.Base(sessionDir),
@@ -39,9 +39,9 @@ func RecoverIncompleteSessions(vodDirectory string, channels []string) {
 			outputFile := filepath.Join(channelDir, fmt.Sprintf("%s.mp4", filepath.Base(sessionDir)))
 
 			if err := downloader.Finalize(outputFile); err != nil {
-				log.Error("Failed to finalize incomplete session %s: %v", sessionDir, err)
+				log.Errorf("Failed to finalize incomplete session %s: %v", sessionDir, err)
 			} else {
-				log.Info("Recovered session: %s -> %s", sessionDir, outputFile)
+				log.Infof("Recovered session: %s -> %s", sessionDir, outputFile)
 			}
 		}
 	}

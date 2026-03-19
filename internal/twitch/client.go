@@ -11,11 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-resty/resty/v2"
-	"github.com/grafov/m3u8"
 	"twitch-recorder-go/internal/log"
 	"twitch-recorder-go/internal/metrics"
 	"twitch-recorder-go/internal/ratelimit"
+
+	"github.com/go-resty/resty/v2"
+	"github.com/grafov/m3u8"
 )
 
 const (
@@ -23,7 +24,7 @@ const (
 	TwitchIDAPI     = "https://id.twitch.tv"
 	TwitchGQLAPI    = "https://gql.twitch.tv/gql"
 	TwitchUsherM3U8 = "https://usher.ttvnw.net"
-	DefaultClientID = "kd1unb4b3q4t58fwlpcbzcbnm76a8fp"
+	GQLClientId     = "kd1unb4b3q4t58fwlpcbzcbnm76a8fp"
 )
 
 type Client struct {
@@ -218,10 +219,7 @@ func (c *Client) ensureAccessToken(ctx context.Context) error {
 }
 
 func (c *Client) getClientID() string {
-	if c.clientID != "" {
-		return c.clientID
-	}
-	return DefaultClientID
+	return c.clientID
 }
 
 func (c *Client) getAccessToken() string {
@@ -240,10 +238,6 @@ func (e *APIError) Error() string {
 }
 
 func (c *Client) GetLiveTokenSig(ctx context.Context, channel string) (*TokenSig, error) {
-	if err := c.ensureAccessToken(ctx); err != nil {
-		return nil, err
-	}
-
 	body := fmt.Sprintf(`{
 		"operationName": "PlaybackAccessToken",
 		"variables":{
@@ -264,7 +258,7 @@ func (c *Client) GetLiveTokenSig(ctx context.Context, channel string) (*TokenSig
 	}`, channel)
 
 	req := c.httpClient.R().
-		SetHeader("Client-ID", c.getClientID()).
+		SetHeader("Client-ID", GQLClientId).
 		SetHeader("Origin", "https://twitch.tv").
 		SetHeader("Referer", "https://twitch.tv").
 		SetHeader("Content-Type", "text/plain;charset=UTF-8").
@@ -276,7 +270,7 @@ func (c *Client) GetLiveTokenSig(ctx context.Context, channel string) (*TokenSig
 	}
 
 	var response TokenSig
-	resp, err := req.Post(TwitchGQLAPI)
+	resp, err := req.SetResult(&response).Post(TwitchGQLAPI)
 
 	if err != nil {
 		if c.metrics != nil {
@@ -296,6 +290,14 @@ func (c *Client) GetLiveTokenSig(ctx context.Context, channel string) (*TokenSig
 		c.metrics.RecordGQLCall(true)
 	}
 
+	if response.Data.StreamPlaybackAccessToken == nil || response.Data.StreamPlaybackAccessToken.Value == "" {
+		return nil, errors.New("channel is not live")
+	}
+
+	if !response.Data.StreamPlaybackAccessToken.IsEnabled {
+		return nil, errors.New("channel is not live")
+	}
+
 	return &response, nil
 }
 
@@ -308,7 +310,7 @@ func (c *Client) GetCachedToken(ctx context.Context, channel string) (*CachedTok
 		return cached, nil
 	}
 
-	log.Debug("Fetching new token for channel %s", channel)
+	log.Debugf("Fetching new token for channel %s", channel)
 	tokenSig, err := c.GetLiveTokenSig(ctx, channel)
 	if err != nil {
 		return nil, err
@@ -317,8 +319,8 @@ func (c *Client) GetCachedToken(ctx context.Context, channel string) (*CachedTok
 	expiresAt := time.Now().Add(4 * time.Minute)
 
 	cachedToken := &CachedToken{
-		Value:     tokenSig.Data.Token.Value,
-		Signature: tokenSig.Data.Token.Signature,
+		Value:     tokenSig.Data.StreamPlaybackAccessToken.Value,
+		Signature: tokenSig.Data.StreamPlaybackAccessToken.Signature,
 		ExpiresAt: expiresAt,
 	}
 
@@ -357,7 +359,7 @@ func (c *Client) GetLiveM3U8(ctx context.Context, channel string) (string, error
 	}
 
 	if resp.StatusCode() != 200 {
-		log.Debug("Unexpected status code for %s: %d", channel, resp.StatusCode())
+		log.Debugf("Unexpected status code for %s: %d", channel, resp.StatusCode())
 		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode())
 	}
 

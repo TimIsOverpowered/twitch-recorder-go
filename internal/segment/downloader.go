@@ -111,7 +111,7 @@ func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string) er
 			sd.metrics.RecordSegmentDownload(written, duration)
 		}
 
-		log.Debug("Downloaded segment %d/%d (%.2f MB)", sd.downloaded, len(sd.segments), float64(sd.totalSize)/1024/1024)
+		log.Debugf("Downloaded segment %d/%d (%.2f MB)", sd.downloaded, len(sd.segments), float64(sd.totalSize)/1024/1024)
 		return nil
 	}
 
@@ -126,7 +126,7 @@ func (sd *SegmentDownloader) sleepWithBackoff(attempt int) {
 	if backoff > 8*time.Second {
 		backoff = 8 * time.Second
 	}
-	log.Debug("Retrying in %v...", backoff)
+	log.Debugf("Retrying in %v...", backoff)
 	time.Sleep(backoff)
 }
 
@@ -181,7 +181,7 @@ func (sd *SegmentDownloader) GetInitSegment() string {
 
 func (sd *SegmentDownloader) CleanupOnError() {
 	if err := os.RemoveAll(sd.sessionDir); err != nil {
-		log.Error("Failed to cleanup session dir: %v", err)
+		log.Errorf("Failed to cleanup session dir: %v", err)
 	}
 }
 

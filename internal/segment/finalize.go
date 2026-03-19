@@ -48,7 +48,7 @@ func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
 	}
 	f.Close()
 
-	log.Info("Finalizing %d segments into %s", len(segmentFiles), outputFile)
+	log.Infof("Finalizing %d segments into %s", len(segmentFiles), outputFile)
 
 	var cmd *exec.Cmd
 	if sd.format == "mp4" {
@@ -63,18 +63,18 @@ func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
 		return fmt.Errorf("ffmpeg failed: %w", err)
 	}
 
-	log.Info("Successfully created %s", outputFile)
+	log.Infof("Successfully created %s", outputFile)
 
 	os.Remove(concatFile)
 
 	for _, segFile := range segmentFiles {
 		if err := os.Remove(segFile); err != nil {
-			log.Warn("Failed to remove %s: %v", segFile, err)
+			log.Warnf("Failed to remove %s: %v", segFile, err)
 		}
 	}
 
 	if err := os.Remove(sessionDir); err != nil {
-		log.Warn("Failed to remove session directory: %v", err)
+		log.Warnf("Failed to remove session directory: %v", err)
 	}
 
 	return nil

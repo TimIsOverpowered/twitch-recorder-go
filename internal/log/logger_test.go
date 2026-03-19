@@ -7,30 +7,30 @@ import (
 )
 
 func TestInit(t *testing.T) {
-	Init()
+	Init("info")
 	assert.NotNil(t, Logger)
 }
 
 func TestDebug(t *testing.T) {
-	Init()
+	Init("debug")
 	Debug("test message")
 	Debugf("test %s", "formatted")
 }
 
 func TestInfo(t *testing.T) {
-	Init()
+	Init("info")
 	Info("test message")
 	Infof("test %s", "formatted")
 }
 
 func TestWarn(t *testing.T) {
-	Init()
+	Init("warn")
 	Warn("test message")
 	Warnf("test %s", "formatted")
 }
 
 func TestError(t *testing.T) {
-	Init()
+	Init("error")
 	Error("test message")
 	Errorf("test %s", "formatted")
 }

@@ -56,9 +56,9 @@ func TestGetClientID(t *testing.T) {
 			expectID: "custom_id",
 		},
 		{
-			name:     "default client id",
+			name:     "empty client id",
 			clientID: "",
-			expectID: DefaultClientID,
+			expectID: "",
 		},
 	}
 

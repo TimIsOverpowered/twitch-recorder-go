@@ -48,7 +48,7 @@ func ValidateConfig(vodDirectory string, channels []string) error {
 
 		sanitized := sanitize.SanitizeChannelName(channel)
 		if sanitized != channel {
-			log.Warn("Channel name '%s' sanitized to '%s'", channel, sanitized)
+			log.Warnf("Channel name '%s' sanitized to '%s'", channel, sanitized)
 		}
 	}
 

@@ -26,15 +26,12 @@ type TwitchToken struct {
 // TokenSig is the GQL response from PlaybackAccessToken query
 type TokenSig struct {
 	Data struct {
-		Token struct {
+		StreamPlaybackAccessToken *struct {
 			Value     string `json:"value"`
 			Signature string `json:"signature"`
+			IsEnabled bool   `json:"is_enabled"`
 		} `json:"streamPlaybackAccessToken"`
 	} `json:"data"`
-	UserID    string `json:"user_id"`
-	UserName  string `json:"user_name"`
-	Type      string `json:"type"`
-	StartedAt string `json:"started_at"`
 }
 
 // CachedToken holds token value with expiration tracking

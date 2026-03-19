@@ -45,16 +45,16 @@ func PostRecording(endpoint, apiKey, channel, streamID, localPath string, durati
 		Post(actualEndpoint)
 
 	if err != nil {
-		log.Warn("Failed to post to API for %s: %v", channel, err)
+		log.Warnf("Failed to post to API for %s: %v", channel, err)
 		return false
 	}
 
 	if resp.StatusCode() != 200 {
-		log.Warn("API post failed for %s: expected 200, got %d", channel, resp.StatusCode())
+		log.Warnf("API post failed for %s: expected 200, got %d", channel, resp.StatusCode())
 		return false
 	}
 
-	log.Info("Successfully posted recording to API: %s", channel)
+	log.Infof("Successfully posted recording to API: %s", channel)
 	return true
 }
 
