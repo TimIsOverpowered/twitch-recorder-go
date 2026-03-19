@@ -183,7 +183,7 @@ func (sd *SegmentDownloader) getSegmentFilename() string {
 	if sd.format == "mp4" {
 		ext = ".mp4"
 	}
-	return fmt.Sprintf("%05d%s", counter, ext)
+	return fmt.Sprintf("%d%s", counter, ext)
 }
 
 func (sd *SegmentDownloader) GetSessionDir() string {
