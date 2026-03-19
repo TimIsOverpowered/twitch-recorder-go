@@ -79,6 +79,7 @@ func TestDownloadSegmentSuccess(t *testing.T) {
 	defer server.Close()
 
 	sd := NewSegmentDownloader("test", time.Now())
+	defer sd.CleanupOnError()
 
 	err := sd.DownloadSegment(context.Background(), server.URL)
 
@@ -100,6 +101,7 @@ func TestDownloadSegmentRetry(t *testing.T) {
 	defer server.Close()
 
 	sd := NewSegmentDownloader("test", time.Now())
+	defer sd.CleanupOnError()
 
 	err := sd.DownloadSegment(context.Background(), server.URL)
 
@@ -114,6 +116,7 @@ func TestDownloadSegmentMaxRetries(t *testing.T) {
 	defer server.Close()
 
 	sd := NewSegmentDownloader("test", time.Now())
+	defer sd.CleanupOnError()
 
 	err := sd.DownloadSegment(context.Background(), server.URL)
 
