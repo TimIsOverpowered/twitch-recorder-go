@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
+	"twitch-recorder-go/internal/ratelimit"
 )
 
 const (
@@ -25,6 +26,7 @@ type Client struct {
 	expiresAt         time.Time
 	mu                sync.RWMutex
 	isRefreshingToken bool
+	rateLimiter       *ratelimit.Limiter
 }
 
 func NewClient(clientID, clientSecret, oauthKey string, httpClient *resty.Client) *Client {
@@ -33,6 +35,14 @@ func NewClient(clientID, clientSecret, oauthKey string, httpClient *resty.Client
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		oauthKey:     oauthKey,
+		rateLimiter:  ratelimit.NewLimiter(10, 1*time.Second),
+	}
+}
+
+func (c *Client) SetRateLimit(maxTokens int, refillRate time.Duration) {
+	if c.rateLimiter != nil {
+		c.rateLimiter.SetMaxTokens(maxTokens)
+		c.rateLimiter.SetRefillRate(refillRate)
 	}
 }
 
@@ -40,6 +50,8 @@ func (c *Client) GetUser(ctx context.Context, login string) (*User, error) {
 	if err := c.ensureAccessToken(ctx); err != nil {
 		return nil, err
 	}
+
+	c.rateLimiter.Wait()
 
 	var response struct {
 		Data []User `json:"data"`
@@ -74,6 +86,8 @@ func (c *Client) GetStreams(ctx context.Context, userLogin string) (*Streams, er
 		return nil, err
 	}
 
+	c.rateLimiter.Wait()
+
 	var response Streams
 
 	resp, err := c.httpClient.R().
@@ -106,6 +120,8 @@ func (c *Client) RefreshToken(ctx context.Context) error {
 
 	c.isRefreshingToken = true
 	defer func() { c.isRefreshingToken = false }()
+
+	c.rateLimiter.Wait()
 
 	var response TwitchToken
 
