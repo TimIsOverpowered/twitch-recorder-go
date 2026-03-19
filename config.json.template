@@ -10,7 +10,6 @@
         "sodapoppin",
     ],
     "twitch_app": { //CAN LEAVE EMPTY, IT WILL GENERATE ON LAUNCH.
-        
     },
     "drive": { //CAN BE RETRIEVED FROM GOOGLE PLAYGROUND OAUTH USING OWN CLIENT_ID & CLIENT_SECRET.
         "refresh_token": "",
@@ -25,8 +24,12 @@
             "https://www.googleapis.com/auth/drive.file",
             "https://www.googleapis.com/auth/drive.metadata"
         ],
-    "endpoint": {
-        "token_url": "https://oauth2.googleapis.com/token"
-    }
- }
+        "endpoint": {
+            "token_url": "https://oauth2.googleapis.com/token"
+        }
+    },
+    // ARCHIVE API INTEGRATION (OPTIONAL) - See docs for details
+    "archive_api_enabled": false,
+    "archive_api_endpoint": "", // Supports {channel} placeholder, e.g.: "https://archive.overpowered.tv/{channel}/v2/live"
+    "archive_api_key": ""
 }

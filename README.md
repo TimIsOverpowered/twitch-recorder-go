@@ -14,9 +14,11 @@ This program can monitor and record multiple Twitch streams live and convert it 
 ## Requirements
 
 ### Runtime
+
 - [FFmpeg](https://ffmpeg.org/download.html) - Required for video recording
 
 ### Building from Source
+
 - Go 1.25+
 - Git
 
@@ -42,7 +44,10 @@ The OAuth key bypasses ads if you have Twitch Turbo and enables higher quality s
 3. Go to Console tab
 4. Paste and run this command:
    ```javascript
-   document.cookie.split("; ").find(item=>item.startsWith("auth-token="))?.split("=")[1]
+   document.cookie
+     .split('; ')
+     .find((item) => item.startsWith('auth-token='))
+     ?.split('=')[1];
    ```
 5. Copy the 30-character result
 6. Add to config.json as `"oauth_key"`
@@ -53,12 +58,14 @@ To revoke: Change password or visit https://www.twitch.tv/settings/security
 ### Step 3: Configure Recording Directory
 
 Update `vod_directory` in config.json to your preferred path:
+
 - Windows: `"vod_directory": "C:\\Users\\YourName\\TwitchRecordings"`
 - Mac/Linux: `"vod_directory": "/home/yourname/twitch-recordings"`
 
 ### Step 4: Add Channels to Monitor
 
 Replace the example channel with Twitch channels you want to record:
+
 ```json
 "channels": ["channel1", "channel2", "channel3"]
 ```
@@ -84,51 +91,52 @@ The program auto-generates `config.json` on first run. Update these fields:
 
 ```json
 {
- "twitch": {
-  "client_id": "YOUR_TWITCH_CLIENT_ID",
-  "client_secret": "YOUR_TWITCH_CLIENT_SECRET",
-  "oauth_key": "" 
- },
- "vod_directory": "./recordings",
- "channels": [
-  "example_channel"
- ],
- "twitch_app": {},
- "drive": {
-  "refresh_token": "",
-  "access_token": ""
- },
- "google": {
-  "client_id": "",
-  "client_secret": "",
-  "scopes": [
-   "https://www.googleapis.com/auth/drive",
-   "https://www.googleapis.com/auth/drive.appdata",
-   "https://www.googleapis.com/auth/drive.file",
-   "https://www.googleapis.com/auth/drive.metadata"
-  ],
-  "endpoint": {
-   "token_url": "https://oauth2.googleapis.com/token"
-  }
- }
+  "twitch": {
+    "client_id": "YOUR_TWITCH_CLIENT_ID",
+    "client_secret": "YOUR_TWITCH_CLIENT_SECRET",
+    "oauth_key": ""
+  },
+  "vod_directory": "./recordings",
+  "channels": ["example_channel"],
+  "twitch_app": {},
+  "drive": {
+    "refresh_token": "",
+    "access_token": ""
+  },
+  "google": {
+    "client_id": "",
+    "client_secret": "",
+    "scopes": [
+      "https://www.googleapis.com/auth/drive",
+      "https://www.googleapis.com/auth/drive.appdata",
+      "https://www.googleapis.com/auth/drive.file",
+      "https://www.googleapis.com/auth/drive.metadata"
+    ],
+    "endpoint": {
+      "token_url": "https://oauth2.googleapis.com/token"
+    }
+  },
+  "archive_api_enabled": false,
+  "archive_api_endpoint": "",
+  "archive_api_key": ""
 }
 ```
 
 ### Config Fields
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `twitch.client_id` | Yes | From Twitch Developer Console |
-| `twitch.client_secret` | Yes | From Twitch Developer Console |
-| `twitch.oauth_key` | No | Browser auth token (bypass ads with Turbo) |
-| `vod_directory` | Yes | Where to save recorded videos |
-| `channels` | Yes | Array of Twitch channel names to monitor |
-| `drive.refresh_token` | No* | Google Drive refresh token |
-| `drive.access_token` | No* | Google Drive access token |
-| `google.client_id` | No* | Google OAuth Client ID |
-| `google.client_secret` | No* | Google OAuth Client Secret |
+| Field                  | Required | Description                                |
+| ---------------------- | -------- | ------------------------------------------ |
+| `twitch.client_id`     | Yes      | From Twitch Developer Console              |
+| `twitch.client_secret` | Yes      | From Twitch Developer Console              |
+| `twitch.oauth_key`     | No       | Browser auth token (bypass ads with Turbo) |
+| `vod_directory`        | Yes      | Where to save recorded videos              |
+| `channels`             | Yes      | Array of Twitch channel names to monitor   |
+| `drive.refresh_token`  | No\*     | Google Drive refresh token                 |
+| `drive.access_token`   | No\*     | Google Drive access token                  |
+| `google.client_id`     | No\*     | Google OAuth Client ID                     |
+| `google.client_secret` | No\*     | Google OAuth Client Secret                 |
 
-*Required only if using `-drive` flag
+\*Required only if using `-drive` flag
 
 ## Running the Program
 
@@ -140,16 +148,6 @@ The program auto-generates `config.json` on first run. Update these fields:
 
 - `-config` - Path to config file (default: ./config.json)
 - `-drive` - Enable Google Drive upload (requires drive credentials in config)
-
-### Binary Naming Format
-
-Downloaded binaries follow this format:
-- `twitch-recorder-go-windows-amd64.exe` - Windows 64-bit
-- `twitch-recorder-go-windows-arm64.exe` - Windows ARM64
-- `twitch-recorder-go-macos-amd64` - macOS Intel
-- `twitch-recorder-go-macos-arm64` - macOS Apple Silicon
-- `twitch-recorder-go-linux-amd64` - Linux 64-bit
-- `twitch-recorder-go-linux-arm64` - Linux ARM64
 
 ## Build from Source
 

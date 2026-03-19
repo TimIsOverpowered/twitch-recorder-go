@@ -1,11 +1,19 @@
 package twitch
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"math/rand"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-resty/resty/v2"
+	"github.com/grafov/m3u8"
+	"twitch-recorder-go/internal/log"
 	"twitch-recorder-go/internal/metrics"
 	"twitch-recorder-go/internal/ratelimit"
 )
@@ -29,6 +37,8 @@ type Client struct {
 	isRefreshingToken bool
 	rateLimiter       *ratelimit.Limiter
 	metrics           *metrics.Metrics
+	tokenCache        map[string]*CachedToken
+	tokenCacheMu      sync.RWMutex
 }
 
 func NewClient(clientID, clientSecret, oauthKey string, httpClient *resty.Client) *Client {
@@ -38,6 +48,7 @@ func NewClient(clientID, clientSecret, oauthKey string, httpClient *resty.Client
 		clientSecret: clientSecret,
 		oauthKey:     oauthKey,
 		rateLimiter:  ratelimit.NewLimiter(150, 400*time.Millisecond),
+		tokenCache:   make(map[string]*CachedToken),
 	}
 }
 
@@ -226,4 +237,149 @@ type APIError struct {
 
 func (e *APIError) Error() string {
 	return "twitch API error: status " + string(rune(e.StatusCode)) + ", body: " + e.Body
+}
+
+func (c *Client) GetLiveTokenSig(ctx context.Context, channel string) (*TokenSig, error) {
+	if err := c.ensureAccessToken(ctx); err != nil {
+		return nil, err
+	}
+
+	body := fmt.Sprintf(`{
+		"operationName": "PlaybackAccessToken",
+		"variables":{
+			"isLive": true,
+			"login": "%s",
+			"isVod": false,
+			"vodID": "",
+			"platform": "web",
+			"playerBackend": "mediaplayer",
+			"playerType": "site"
+		},
+		"extensions":{
+			"persistedQuery":{
+				"version": 1,
+				"sha256Hash": "0828119ded1c13477966434e15800ff57ddacf13ba1911c129dc2200705b0712"
+			}
+		}
+	}`, channel)
+
+	req := c.httpClient.R().
+		SetHeader("Client-ID", c.getClientID()).
+		SetHeader("Origin", "https://twitch.tv").
+		SetHeader("Referer", "https://twitch.tv").
+		SetHeader("Content-Type", "text/plain;charset=UTF-8").
+		SetHeader("Accept", "*/*").
+		SetBody([]byte(body))
+
+	if c.oauthKey != "" {
+		req.SetHeader("Authorization", "OAuth "+c.oauthKey)
+	}
+
+	var response TokenSig
+	resp, err := req.Post(TwitchGQLAPI)
+
+	if err != nil {
+		if c.metrics != nil {
+			c.metrics.RecordGQLCall(false)
+		}
+		return nil, err
+	}
+
+	if resp.IsError() {
+		if c.metrics != nil {
+			c.metrics.RecordGQLCall(false)
+		}
+		return nil, &APIError{StatusCode: resp.StatusCode(), Body: string(resp.Body())}
+	}
+
+	if c.metrics != nil {
+		c.metrics.RecordGQLCall(true)
+	}
+
+	return &response, nil
+}
+
+func (c *Client) GetCachedToken(ctx context.Context, channel string) (*CachedToken, error) {
+	c.tokenCacheMu.RLock()
+	cached, ok := c.tokenCache[channel]
+	c.tokenCacheMu.RUnlock()
+
+	if ok && time.Now().Before(cached.ExpiresAt) {
+		return cached, nil
+	}
+
+	log.Debug("Fetching new token for channel %s", channel)
+	tokenSig, err := c.GetLiveTokenSig(ctx, channel)
+	if err != nil {
+		return nil, err
+	}
+
+	expiresAt := time.Now().Add(4 * time.Minute)
+
+	cachedToken := &CachedToken{
+		Value:     tokenSig.Data.Token.Value,
+		Signature: tokenSig.Data.Token.Signature,
+		ExpiresAt: expiresAt,
+	}
+
+	c.tokenCacheMu.Lock()
+	c.tokenCache[channel] = cachedToken
+	c.tokenCacheMu.Unlock()
+
+	return cachedToken, nil
+}
+
+func (c *Client) GetLiveM3U8(ctx context.Context, channel string) (string, error) {
+	cachedToken, err := c.GetCachedToken(ctx, channel)
+	if err != nil {
+		return "", err
+	}
+
+	randomP := strconv.Itoa(rand.Intn(9000000) + 1000000)
+	m3u8URL := fmt.Sprintf(
+		"%s/api/channel/hls/%s.m3u8?allow_source=true&p=%s&player=mediaplayer&include_unavailable=true&supported_codecs=av1,h265,h264&playlist_include_framerate=true&allow_spectre=true&sig=%s&token=%s",
+		TwitchUsherM3U8, channel, randomP, cachedToken.Signature, cachedToken.Value,
+	)
+
+	req := c.httpClient.R()
+	if c.oauthKey != "" {
+		req.SetHeader("Authorization", "OAuth "+c.oauthKey)
+	}
+	req.SetHeader("Content-Type", "application/vnd.apple.mpegurl")
+
+	resp, err := req.Get(m3u8URL)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch m3u8: %w", err)
+	}
+
+	if resp.StatusCode() == 404 {
+		return "", errors.New("channel is not live")
+	}
+
+	if resp.StatusCode() != 200 {
+		log.Debug("Unexpected status code for %s: %d", channel, resp.StatusCode())
+		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode())
+	}
+
+	body := &bytes.Buffer{}
+	_, err = body.ReadFrom(resp.RawBody())
+	if err != nil {
+		return "", fmt.Errorf("failed to read m3u8 body: %w", err)
+	}
+
+	playlist, listType, err := m3u8.DecodeFrom(body, true)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode m3u8: %w", err)
+	}
+
+	if listType == m3u8.MASTER {
+		masterPlaylist := playlist.(*m3u8.MasterPlaylist)
+		for _, variant := range masterPlaylist.Variants {
+			if strings.EqualFold(variant.Video, "chunked") {
+				return variant.URI, nil
+			}
+		}
+	}
+
+	return "", errors.New("cannot find chunked variant in playlist")
 }

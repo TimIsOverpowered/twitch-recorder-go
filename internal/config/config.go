@@ -29,6 +29,9 @@ type Config struct {
 			TokenURL string `json:"token_url"`
 		} `json:"endpoint"`
 	} `json:"google"`
+	ArchiveAPIEnabled  bool   `json:"archive_api_enabled"`
+	ArchiveAPIEndpoint string `json:"archive_api_endpoint"`
+	ArchiveApiKey      string `json:"archive_api_key"`
 }
 
 type TwitchToken struct {

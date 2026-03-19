@@ -20,6 +20,15 @@ type Metrics struct {
 	apiQuotaUsed    int64
 	lastAPICallTime time.Time
 
+	// GQL metrics
+	gqlCallsTotal  int64
+	gqlCallsFailed int64
+
+	// Archive API metrics
+	archiveAPICallsTotal   int64
+	archiveAPICallsFailed  int64
+	archiveAPILastCallTime time.Time
+
 	// Recording metrics
 	recordingsStarted      int64
 	recordingsCompleted    int64
@@ -111,6 +120,27 @@ func (m *Metrics) RecordStreamCheck(online bool) {
 	}
 }
 
+func (m *Metrics) RecordGQLCall(success bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.gqlCallsTotal++
+	if !success {
+		m.gqlCallsFailed++
+	}
+}
+
+func (m *Metrics) RecordArchiveAPICall(success bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.archiveAPICallsTotal++
+	m.archiveAPILastCallTime = time.Now()
+	if !success {
+		m.archiveAPICallsFailed++
+	}
+}
+
 type Stats struct {
 	// Download stats
 	SegmentsDownloaded  int64         `json:"segments_downloaded"`
@@ -124,6 +154,15 @@ type Stats struct {
 	APICallsFailed  int64     `json:"api_calls_failed"`
 	APIQuotaUsed    int64     `json:"api_quota_used"`
 	LastAPICallTime time.Time `json:"last_api_call_time"`
+
+	// GQL stats
+	GQLCallsTotal  int64 `json:"gql_calls_total"`
+	GQLCallsFailed int64 `json:"gql_calls_failed"`
+
+	// Archive API stats
+	ArchiveAPICallsTotal   int64     `json:"archive_api_calls_total"`
+	ArchiveAPICallsFailed  int64     `json:"archive_api_calls_failed"`
+	ArchiveAPILastCallTime time.Time `json:"archive_api_last_call_time"`
 
 	// Recording stats
 	RecordingsStarted      int64         `json:"recordings_started"`
@@ -169,6 +208,11 @@ func (m *Metrics) GetStats() Stats {
 		APICallsFailed:         m.apiCallsFailed,
 		APIQuotaUsed:           m.apiQuotaUsed,
 		LastAPICallTime:        m.lastAPICallTime,
+		GQLCallsTotal:          m.gqlCallsTotal,
+		GQLCallsFailed:         m.gqlCallsFailed,
+		ArchiveAPICallsTotal:   m.archiveAPICallsTotal,
+		ArchiveAPICallsFailed:  m.archiveAPICallsFailed,
+		ArchiveAPILastCallTime: m.archiveAPILastCallTime,
 		RecordingsStarted:      m.recordingsStarted,
 		RecordingsCompleted:    m.recordingsCompleted,
 		RecordingsFailed:       m.recordingsFailed,
@@ -192,6 +236,11 @@ func (m *Metrics) Reset() {
 	m.apiCallsFailed = 0
 	m.apiQuotaUsed = 0
 	m.lastAPICallTime = time.Time{}
+	m.gqlCallsTotal = 0
+	m.gqlCallsFailed = 0
+	m.archiveAPICallsTotal = 0
+	m.archiveAPICallsFailed = 0
+	m.archiveAPILastCallTime = time.Time{}
 	m.recordingsStarted = 0
 	m.recordingsCompleted = 0
 	m.recordingsFailed = 0

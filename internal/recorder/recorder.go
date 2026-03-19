@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"twitch-recorder-go/internal/api"
+	"twitch-recorder-go/internal/config"
 	"twitch-recorder-go/internal/log"
 	"twitch-recorder-go/internal/metrics"
 	"twitch-recorder-go/internal/segment"
@@ -15,12 +17,14 @@ type Recorder struct {
 	twitchClient *twitch.Client
 	channel      string
 	metrics      *metrics.Metrics
+	config       *config.Config
 }
 
-func NewRecorder(twitchClient *twitch.Client, channel string) *Recorder {
+func NewRecorder(twitchClient *twitch.Client, channel string, cfg *config.Config) *Recorder {
 	return &Recorder{
 		twitchClient: twitchClient,
 		channel:      channel,
+		config:       cfg,
 	}
 }
 
@@ -29,7 +33,7 @@ func (r *Recorder) SetMetrics(m *metrics.Metrics) {
 }
 
 func (r *Recorder) MonitorChannel(ctx context.Context) error {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(6 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -45,27 +49,17 @@ func (r *Recorder) MonitorChannel(ctx context.Context) error {
 }
 
 func (r *Recorder) checkAndRecord(ctx context.Context) error {
-	streams, err := r.twitchClient.GetStreams(ctx, r.channel)
+	m3u8URL, err := r.twitchClient.GetLiveM3U8(ctx, r.channel)
 	if err != nil {
-		return fmt.Errorf("failed to get streams: %w", err)
-	}
-
-	if len(streams.Data) == 0 {
-		if r.metrics != nil {
-			r.metrics.RecordStreamCheck(false)
-		}
+		log.Debug("Channel %s is not live", r.channel)
 		return nil
 	}
 
-	if r.metrics != nil {
-		r.metrics.RecordStreamCheck(true)
-	}
-
 	log.Info("%s is LIVE! Starting recording...", r.channel)
-	return r.recordStream(ctx, streams.Data[0].ID)
+	return r.recordStream(ctx, m3u8URL)
 }
 
-func (r *Recorder) recordStream(ctx context.Context, streamID string) error {
+func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 	startTime := time.Now()
 	timestamp := time.Now()
 	downloader := segment.NewSegmentDownloader(r.channel, timestamp)
@@ -78,6 +72,9 @@ func (r *Recorder) recordStream(ctx context.Context, streamID string) error {
 	sessionDir := downloader.GetSessionDir()
 	log.Info("Recording session: %s", sessionDir)
 
+	streamIDChan := make(chan string, 1)
+	go r.pollStreamID(ctx, streamIDChan)
+
 	initSegmentDownloaded := false
 
 	for {
@@ -88,11 +85,12 @@ func (r *Recorder) recordStream(ctx context.Context, streamID string) error {
 			if r.metrics != nil {
 				r.metrics.RecordRecordingComplete(duration)
 			}
-			return r.finalizeRecording(downloader, sessionDir)
+			return r.finalizeRecording(downloader, sessionDir, streamIDChan, startTime)
+		case streamID := <-streamIDChan:
+			log.Info("Stream ID: %s", streamID)
 		default:
 		}
 
-		m3u8URL := fmt.Sprintf("%s/%s.m3u8", twitch.TwitchUsherM3U8, streamID)
 		if err := parser.FetchNewSegments(ctx, m3u8URL); err != nil {
 			log.Error("Error fetching playlist: %v", err)
 			time.Sleep(5 * time.Second)
@@ -105,7 +103,7 @@ func (r *Recorder) recordStream(ctx context.Context, streamID string) error {
 			if r.metrics != nil {
 				r.metrics.RecordRecordingComplete(duration)
 			}
-			return r.finalizeRecording(downloader, sessionDir)
+			return r.finalizeRecording(downloader, sessionDir, streamIDChan, startTime)
 		}
 
 		initURI := downloader.GetInitSegment()
@@ -122,8 +120,44 @@ func (r *Recorder) recordStream(ctx context.Context, streamID string) error {
 	}
 }
 
-func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sessionDir string) error {
-	outputFile := fmt.Sprintf("%s/%s.mp4", twitch.TwitchUsherM3U8, r.channel)
+func (r *Recorder) pollStreamID(ctx context.Context, streamIDChan chan<- string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		streams, err := r.twitchClient.GetStreams(ctx, r.channel)
+		if err == nil && len(streams.Data) > 0 {
+			streamID := streams.Data[0].ID
+			select {
+			case streamIDChan <- streamID:
+				return
+			default:
+				return
+			}
+		}
+
+		time.Sleep(5 * time.Second)
+	}
+}
+
+func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sessionDir string, streamIDChan chan string, startTime time.Time) error {
+	var streamID string
+	select {
+	case id := <-streamIDChan:
+		if id != "" {
+			streamID = id
+		}
+	default:
+	}
+
+	outputName := r.channel
+	if streamID != "" {
+		outputName = streamID
+	}
+	outputFile := fmt.Sprintf("%s/%s.mp4", sessionDir, outputName)
 	if err := downloader.Finalize(outputFile); err != nil {
 		if r.metrics != nil {
 			r.metrics.RecordRecordingFailure()
@@ -132,5 +166,16 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 	}
 
 	log.Info("Recording saved: %s", outputFile)
+
+	duration := time.Since(startTime)
+	if r.config.ArchiveAPIEnabled && r.config.ArchiveAPIEndpoint != "" && r.config.ArchiveApiKey != "" {
+		go func() {
+			success := api.PostRecording(r.config.ArchiveAPIEndpoint, r.config.ArchiveApiKey, r.channel, streamID, outputFile, duration)
+			if r.metrics != nil {
+				r.metrics.RecordArchiveAPICall(success)
+			}
+		}()
+	}
+
 	return nil
 }

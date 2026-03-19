@@ -89,7 +89,7 @@ func main() {
 		wg.Add(1)
 		go func(ch string) {
 			defer wg.Done()
-			rec := recorder.NewRecorder(twitchClient, ch)
+			rec := recorder.NewRecorder(twitchClient, ch, c)
 			rec.SetMetrics(m)
 			rec.MonitorChannel(ctx)
 		}(channel)
@@ -168,6 +168,10 @@ func printMetrics(m *metrics.Metrics) {
 		log.Info("  Last API Call: %v ago", time.Since(stats.LastAPICallTime))
 	}
 	log.Info("")
+	log.Info("GQL STATS:")
+	log.Info("  Total GQL Calls: %d", stats.GQLCallsTotal)
+	log.Info("  Failed GQL Calls: %d", stats.GQLCallsFailed)
+	log.Info("")
 	log.Info("RECORDING STATS:")
 	log.Info("  Recordings Started: %d", stats.RecordingsStarted)
 	log.Info("  Recordings Completed: %d", stats.RecordingsCompleted)
@@ -178,6 +182,13 @@ func printMetrics(m *metrics.Metrics) {
 	log.Info("  Streams Checked: %d", stats.StreamsChecked)
 	log.Info("  Streams Online: %d", stats.StreamsOnline)
 	log.Info("  Streams Offline: %d", stats.StreamsOffline)
+	log.Info("")
+	log.Info("ARCHIVE API STATS:")
+	log.Info("  Total API Posts: %d", stats.ArchiveAPICallsTotal)
+	log.Info("  Failed API Posts: %d", stats.ArchiveAPICallsFailed)
+	if !stats.ArchiveAPILastCallTime.IsZero() {
+		log.Info("  Last API Post: %v ago", time.Since(stats.ArchiveAPILastCallTime))
+	}
 	log.Info("========================================")
 }
 
@@ -208,7 +219,11 @@ func generateDefaultConfig(configPath string) error {
     "endpoint": {
       "token_url": "https://oauth2.googleapis.com/token"
     }
-  }
+  },
+  "archive_api_enabled": false,
+  // Supports {channel} placeholder, e.g.: "https://archive.overpowered.tv/{channel}/v2/live"
+  "archive_api_endpoint": "",
+  "archive_api_key": ""
 }`
 
 	setupInstructions := `
@@ -264,6 +279,26 @@ To enable automatic uploads to Google Drive:
    - Authorize and exchange for tokens
 5. Fill in "client_id", "client_secret", "refresh_token", and "access_token"
 6. Run with -drive flag to enable uploads
+
+STEP 6: Archive API Integration (Optional)
+-------------------------------------------
+To enable automatic posting of recording metadata to your archive API:
+1. Set "archive_api_enabled": true
+2. Set "archive_api_endpoint" to your API URL
+   - Supports {channel} placeholder in URL
+   - Example with channel in path: "https://archive.overpowered.tv/{channel}/v2/live"
+   - Example without channel in path: "https://api.xqc.wtf/v2/live"
+3. Set "archive_api_key" to your authentication key
+
+The recorder will automatically post the following after each successful recording:
+- Channel name (in both URL if {channel} used, and in JSON body)
+- Stream ID
+- Local file path
+- Recording duration
+- File size
+- Timestamp
+
+API posts are asynchronous and won't block recording operations. Errors are logged but don't affect recording finalization.
 
 ================================================================================
 After configuring, save this file and run twitch-recorder-go again!
