@@ -27,11 +27,17 @@ type SegmentDownloader struct {
 	initSegment string
 }
 
-func NewSegmentDownloader(channel string, timestamp time.Time) *SegmentDownloader {
+func NewSegmentDownloader(vodDirectory, channel string, timestamp time.Time) *SegmentDownloader {
 	safeChannel := sanitize.SanitizeChannelName(channel)
-	dir := fmt.Sprintf("%s_%s", safeChannel, timestamp.Format("2006-01-02_15-04-05"))
+	channelDir := filepath.Join(vodDirectory, safeChannel)
+	sessionDir := filepath.Join(channelDir, timestamp.Format("2006-01-02_15-04-05"))
+
+	if err := os.MkdirAll(channelDir, 0755); err != nil {
+		log.Errorf("Failed to create channel directory %s: %v", channelDir, err)
+	}
+
 	return &SegmentDownloader{
-		sessionDir: dir,
+		sessionDir: sessionDir,
 		seen:       make(map[string]bool),
 		segments:   make([]string, 0),
 	}

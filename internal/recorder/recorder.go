@@ -84,7 +84,7 @@ func (r *Recorder) checkAndRecord(ctx context.Context) error {
 func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 	startTime := time.Now()
 	timestamp := time.Now()
-	downloader := segment.NewSegmentDownloader(r.channel, timestamp)
+	downloader := segment.NewSegmentDownloader(r.config.VodDirectory, r.channel, timestamp)
 	parser := segment.NewPlaylistParser(downloader)
 
 	if r.metrics != nil {
