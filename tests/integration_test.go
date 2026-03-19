@@ -81,7 +81,7 @@ func TestValidateConfigIntegration(t *testing.T) {
 	assert.Error(t, err)
 
 	err = segment.ValidateConfig(tempDir, []string{"invalid@channel"})
-	assert.Error(t, err)
+	assert.NoError(t, err, "Invalid characters should be sanitized, not rejected")
 }
 
 func TestConfigWithEnvOverrides(t *testing.T) {

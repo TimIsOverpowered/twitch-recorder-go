@@ -63,9 +63,9 @@ func TestValidateConfigChannelTooLong(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tempDir)
 
-	err = ValidateConfig(tempDir, []string{"this_channel_name_is_way_too_long_for_twitch_rules"})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "exceeds maximum length")
+	longName := "this_channel_name_is_way_too_long_for_twitch_rules"
+	err = ValidateConfig(tempDir, []string{longName})
+	assert.NoError(t, err, "Long channel names should be sanitized, not rejected")
 }
 
 func TestValidateConfigInvalidCharacters(t *testing.T) {
@@ -73,18 +73,20 @@ func TestValidateConfigInvalidCharacters(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tempDir)
 
-	tests := []string{
-		"invalid@channel",
-		"invalid#channel",
-		"invalid channel",
-		"invalid/channel",
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"invalid@channel", "invalid_channel"},
+		{"invalid#channel", "invalid_channel"},
+		{"invalid channel", "invalid_channel"},
+		{"invalid/channel", "invalid_channel"},
 	}
 
-	for _, channel := range tests {
-		t.Run(channel, func(t *testing.T) {
-			err = ValidateConfig(tempDir, []string{channel})
-			assert.Error(t, err)
-			assert.Contains(t, err.Error(), "contains invalid characters")
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			err = ValidateConfig(tempDir, []string{tc.input})
+			assert.NoError(t, err, "Invalid characters should be sanitized, not rejected")
 		})
 	}
 }

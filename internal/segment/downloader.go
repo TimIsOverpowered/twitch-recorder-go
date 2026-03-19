@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"twitch-recorder-go/internal/log"
+	"twitch-recorder-go/internal/sanitize"
 )
 
 type SegmentDownloader struct {
@@ -23,7 +24,8 @@ type SegmentDownloader struct {
 }
 
 func NewSegmentDownloader(channel string, timestamp time.Time) *SegmentDownloader {
-	dir := fmt.Sprintf("%s_%s", channel, timestamp.Format("2006-01-02_15-04-05"))
+	safeChannel := sanitize.SanitizeChannelName(channel)
+	dir := fmt.Sprintf("%s_%s", safeChannel, timestamp.Format("2006-01-02_15-04-05"))
 	return &SegmentDownloader{
 		sessionDir: dir,
 		seen:       make(map[string]bool),

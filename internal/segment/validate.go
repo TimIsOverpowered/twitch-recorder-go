@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"twitch-recorder-go/internal/log"
+	"twitch-recorder-go/internal/sanitize"
 )
 
 func ValidateConfig(vodDirectory string, channels []string) error {
@@ -42,13 +45,10 @@ func ValidateConfig(vodDirectory string, channels []string) error {
 		if channel == "" {
 			return errors.New("channel name cannot be empty")
 		}
-		if len(channel) > 25 {
-			return fmt.Errorf("channel name '%s' exceeds maximum length of 25 characters", channel)
-		}
-		for _, r := range channel {
-			if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
-				return fmt.Errorf("channel name '%s' contains invalid characters", channel)
-			}
+
+		sanitized := sanitize.SanitizeChannelName(channel)
+		if sanitized != channel {
+			log.Warn("Channel name '%s' sanitized to '%s'", channel, sanitized)
 		}
 	}
 
