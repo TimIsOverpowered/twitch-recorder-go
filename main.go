@@ -7,18 +7,19 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"mime"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -85,23 +86,37 @@ func main() {
 	}
 
 	cfgPath = configPath
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
 	var wg sync.WaitGroup
-	wg.Add(1)
 	for _, channel := range config.Channels {
 		if !checkIfUserExists(channel) {
 			log.Printf("%s does not exist", channel)
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
-		go Interval(channel, nil)
+		wg.Add(1)
+		go func(ch string) {
+			defer wg.Done()
+			monitorChannel(ctx, ch)
+		}(channel)
 	}
-	wg.Wait()
+
+	go func() {
+		wg.Wait()
+		cancel()
+	}()
+
+	<-ctx.Done()
+	log.Println("Shutting down gracefully...")
 }
 
 func NewConfig(configPath string) (*Config, error) {
 	config := &Config{}
 
-	d, err := ioutil.ReadFile(configPath)
+	d, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			if err := generateDefaultConfig(configPath); err != nil {
@@ -210,7 +225,7 @@ After configuring, save this file and run twitch-recorder-go again!
 `
 
 	fullConfig := defaultConfig + setupInstructions
-	return ioutil.WriteFile(configPath, []byte(fullConfig), 0644)
+	return os.WriteFile(configPath, []byte(fullConfig), 0644)
 }
 
 func ParseFlags() (string, error) {
@@ -253,39 +268,47 @@ type Value struct {
 	Expires int64 `json:"expires"`
 }
 
-func Interval(channel string, token *TokenSig) {
-	for token == nil {
-		var err error
-		token, err = getLiveTokenSig(channel)
+func monitorChannel(ctx context.Context, channel string) {
+	ticker := time.NewTicker(6 * time.Second)
+	defer ticker.Stop()
+
+	token := getTokenForChannel(channel)
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("[%s] Stopping monitor", channel)
+			return
+		case <-ticker.C:
+			var value *Value
+
+			if err := json.Unmarshal([]byte(token.Data.Token.Value), &value); err != nil {
+				log.Printf("[%s] Something went wrong trying to get token sig expiration.. %v", channel, err)
+				token = nil
+				continue
+			}
+
+			if time.Now().Unix() >= value.Expires {
+				log.Printf("[%s] Live Token Sig Expired...", channel)
+				token = nil
+				continue
+			}
+
+			Check(channel, token)
+		}
+	}
+}
+
+func getTokenForChannel(channel string) *TokenSig {
+	for {
+		token, err := getLiveTokenSig(channel)
 		if err != nil {
 			log.Printf("[%s] %v", channel, err)
 			time.Sleep(5 * time.Second)
+			continue
 		}
+		return token
 	}
-
-	var value *Value
-
-	if err := json.Unmarshal([]byte(token.Data.Token.Value), &value); err != nil {
-		log.Printf("[%s] Something went wrong trying to get token sig expiration.. %v", channel, err)
-		time.AfterFunc(6*time.Second, func() {
-			Interval(channel, nil)
-		})
-		return
-	}
-
-	if time.Now().Unix() >= value.Expires {
-		log.Printf("[%s] Live Token Sig Expired...", channel)
-		time.AfterFunc(6*time.Second, func() {
-			Interval(channel, nil)
-		})
-		return
-	}
-
-	Check(channel, token)
-
-	time.AfterFunc(6*time.Second, func() {
-		Interval(channel, token)
-	})
 }
 
 type User struct {
