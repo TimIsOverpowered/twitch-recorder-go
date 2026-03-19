@@ -14,27 +14,29 @@ func SanitizeChannelName(name string) string {
 
 	name = strings.ReplaceAll(name, "..", "_")
 
+	runes := []rune(name)
+	validRunes := make([]rune, 0, len(runes))
+	for _, r := range runes {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			validRunes = append(validRunes, r)
+		}
+	}
+	name = string(validRunes)
+
 	if len(name) > 25 {
 		name = name[:25]
+	}
+
+	if len(name) < 3 {
+		padding := 3 - len(name)
+		name = name + strings.Repeat("_", padding)
 	}
 
 	if len(name) == 0 {
 		return "unknown"
 	}
 
-	for i, r := range name {
-		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '-' {
-			if i == 0 {
-				name = "_" + name[1:]
-			} else {
-				runes := []rune(name)
-				runes[i] = '_'
-				name = string(runes)
-			}
-		}
-	}
-
-	return strings.Trim(name, "_-")
+	return name
 }
 
 func SanitizeFilename(filename string) string {

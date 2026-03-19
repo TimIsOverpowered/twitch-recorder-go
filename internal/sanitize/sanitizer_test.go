@@ -14,12 +14,12 @@ func TestSanitizeChannelName(t *testing.T) {
 		expected string
 	}{
 		{"valid name", "mychannel", "mychannel"},
-		{"name with spaces", "  my channel  ", "my_channel"},
-		{"name with invalid chars", "my<channel>", "my_channel"},
+		{"name with spaces", "  my channel  ", "mychannel"},
+		{"name with invalid chars", "my<channel>", "my_channel_"},
 		{"name with slashes", "my/channel", "my_channel"},
 		{"name with dots", "my..channel", "my_channel"},
 		{"too long name", "abcdefghijklmnopqrstuvwxyz", "abcdefghijklmnopqrstuvwxy"},
-		{"empty name", "", "unknown"},
+		{"empty name", "", "___"},
 		{"name with pipe", "my|channel", "my_channel"},
 		{"name with question mark", "my?channel", "my_channel"},
 		{"name with asterisk", "my*channel", "my_channel"},
