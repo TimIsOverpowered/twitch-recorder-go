@@ -12,16 +12,25 @@ import (
 
 func (sd *SegmentDownloader) Finalize(outputFile string) error {
 	sessionDir := sd.GetSessionDir()
-	tsFiles, err := filepath.Glob(filepath.Join(sessionDir, "*.ts"))
+
+	var segmentFiles []string
+	var err error
+
+	if sd.format == "mp4" {
+		segmentFiles, err = filepath.Glob(filepath.Join(sessionDir, "*.mp4"))
+	} else {
+		segmentFiles, err = filepath.Glob(filepath.Join(sessionDir, "*.ts"))
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to list segment files: %w", err)
 	}
 
-	if len(tsFiles) == 0 {
+	if len(segmentFiles) == 0 {
 		return fmt.Errorf("no segment files found in session directory")
 	}
 
-	sort.Strings(tsFiles)
+	sort.Strings(segmentFiles)
 
 	concatFile := filepath.Join(sessionDir, "segments.txt")
 	f, err := os.Create(concatFile)
@@ -30,8 +39,8 @@ func (sd *SegmentDownloader) Finalize(outputFile string) error {
 	}
 	defer f.Close()
 
-	for _, tsFile := range tsFiles {
-		_, err := fmt.Fprintf(f, "file '%s'\n", tsFile)
+	for _, segFile := range segmentFiles {
+		_, err := fmt.Fprintf(f, "file '%s'\n", segFile)
 		if err != nil {
 			os.Remove(concatFile)
 			return fmt.Errorf("failed to write to concat file: %w", err)
@@ -39,9 +48,14 @@ func (sd *SegmentDownloader) Finalize(outputFile string) error {
 	}
 	f.Close()
 
-	log.Info("Finalizing %d segments into %s", len(tsFiles), outputFile)
+	log.Info("Finalizing %d segments into %s", len(segmentFiles), outputFile)
 
-	cmd := exec.Command("ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", "-movflags", "+faststart", outputFile)
+	var cmd *exec.Cmd
+	if sd.format == "mp4" {
+		cmd = exec.Command("ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", outputFile)
+	} else {
+		cmd = exec.Command("ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", "-movflags", "+faststart", outputFile)
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -53,9 +67,9 @@ func (sd *SegmentDownloader) Finalize(outputFile string) error {
 
 	os.Remove(concatFile)
 
-	for _, tsFile := range tsFiles {
-		if err := os.Remove(tsFile); err != nil {
-			log.Warn("Failed to remove %s: %v", tsFile, err)
+	for _, segFile := range segmentFiles {
+		if err := os.Remove(segFile); err != nil {
+			log.Warn("Failed to remove %s: %v", segFile, err)
 		}
 	}
 

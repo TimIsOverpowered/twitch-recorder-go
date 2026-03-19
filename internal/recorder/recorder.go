@@ -78,6 +78,8 @@ func (r *Recorder) recordStream(ctx context.Context, streamID string) error {
 	sessionDir := downloader.GetSessionDir()
 	log.Info("Recording session: %s", sessionDir)
 
+	initSegmentDownloaded := false
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -104,6 +106,16 @@ func (r *Recorder) recordStream(ctx context.Context, streamID string) error {
 				r.metrics.RecordRecordingComplete(duration)
 			}
 			return r.finalizeRecording(downloader, sessionDir)
+		}
+
+		initURI := downloader.GetInitSegment()
+		if initURI != "" && !initSegmentDownloaded {
+			log.Info("Downloading init segment...")
+			if err := downloader.DownloadSegment(ctx, initURI); err != nil {
+				log.Error("Failed to download init segment: %v", err)
+			} else {
+				initSegmentDownloaded = true
+			}
 		}
 
 		time.Sleep(3 * time.Second)

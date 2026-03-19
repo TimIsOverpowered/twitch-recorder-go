@@ -48,10 +48,7 @@ func RecoverIncompleteSessions(vodDirectory string, channels []string) {
 }
 
 func isIncompleteSession(sessionDir string) bool {
-	tsFiles, err := filepath.Glob(filepath.Join(sessionDir, "*.ts"))
-	if err != nil {
-		return false
-	}
+	tsFiles, _ := filepath.Glob(filepath.Join(sessionDir, "*.ts"))
 
 	if len(tsFiles) == 0 {
 		return false

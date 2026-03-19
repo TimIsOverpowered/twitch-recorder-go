@@ -16,13 +16,15 @@ import (
 )
 
 type SegmentDownloader struct {
-	sessionDir string
-	seen       map[string]bool
-	segments   []string
-	mu         sync.Mutex
-	downloaded int
-	totalSize  int64
-	metrics    *metrics.Metrics
+	sessionDir  string
+	seen        map[string]bool
+	segments    []string
+	mu          sync.Mutex
+	downloaded  int
+	totalSize   int64
+	metrics     *metrics.Metrics
+	format      string // "ts" or "mp4"
+	initSegment string
 }
 
 func NewSegmentDownloader(channel string, timestamp time.Time) *SegmentDownloader {
@@ -133,7 +135,11 @@ func (sd *SegmentDownloader) getSegmentFilename(url string) string {
 	for _, c := range url {
 		hash = hash*31 + int(c)
 	}
-	return fmt.Sprintf("%05d.ts", abs(hash)%100000)
+	ext := ".ts"
+	if sd.format == "mp4" {
+		ext = ".mp4"
+	}
+	return fmt.Sprintf("%05d%s", abs(hash)%100000, ext)
 }
 
 func abs(x int) int {
@@ -155,6 +161,22 @@ func (sd *SegmentDownloader) GetDownloadedCount() int {
 
 func (sd *SegmentDownloader) SetMetrics(m *metrics.Metrics) {
 	sd.metrics = m
+}
+
+func (sd *SegmentDownloader) SetFormat(format string) {
+	sd.format = format
+}
+
+func (sd *SegmentDownloader) SetInitSegment(uri string) {
+	sd.initSegment = uri
+}
+
+func (sd *SegmentDownloader) GetFormat() string {
+	return sd.format
+}
+
+func (sd *SegmentDownloader) GetInitSegment() string {
+	return sd.initSegment
 }
 
 func (sd *SegmentDownloader) CleanupOnError() {

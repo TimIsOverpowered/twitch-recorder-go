@@ -14,11 +14,13 @@ import (
 )
 
 type PlaylistParser struct {
-	downloader *SegmentDownloader
-	httpClient *http.Client
-	mu         sync.Mutex
-	lastSeq    int
-	isLive     bool
+	downloader  *SegmentDownloader
+	httpClient  *http.Client
+	mu          sync.Mutex
+	lastSeq     int
+	isLive      bool
+	initSegment string
+	format      string // "ts" or "mp4"
 }
 
 func NewPlaylistParser(downloader *SegmentDownloader) *PlaylistParser {
@@ -29,6 +31,7 @@ func NewPlaylistParser(downloader *SegmentDownloader) *PlaylistParser {
 		},
 		lastSeq: -1,
 		isLive:  true,
+		format:  "ts", // default to TS
 	}
 }
 
@@ -76,6 +79,24 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 			pp.isLive = false
 			pp.mu.Unlock()
 			log.Info("Stream ended (EXT-X-ENDLIST detected)")
+		}
+
+		if mediaPlaylist.Map != nil && pp.initSegment == "" {
+			pp.initSegment = mediaPlaylist.Map.URI
+			pp.downloader.SetInitSegment(pp.initSegment)
+			log.Info("Found init segment: %s", pp.initSegment)
+		}
+
+		if len(mediaPlaylist.Segments) > 0 {
+			firstSeg := mediaPlaylist.Segments[0].URI
+			if strings.HasSuffix(firstSeg, ".mp4") {
+				pp.format = "mp4"
+				log.Info("Detected fMP4 format")
+			} else {
+				pp.format = "ts"
+				log.Info("Detected TS format")
+			}
+			pp.downloader.SetFormat(pp.format)
 		}
 
 		pp.mu.Lock()
