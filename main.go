@@ -67,6 +67,21 @@ var upload_to_drive bool
 var cfgPath string
 var tokenMu sync.Mutex
 var isRefreshingTwitchToken bool
+var httpClient *resty.Client
+
+func init() {
+	httpClient = resty.New().SetTimeout(30 * time.Second).SetRetryCount(3).SetRetryWaitTime(time.Second).SetRetryAfter(func(c *resty.Client, r *resty.Response) (time.Duration, error) {
+		if r.StatusCode() >= 429 && r.StatusCode() < 500 {
+			retryAfter := r.Header().Get("Retry-After")
+			if retryAfter != "" {
+				if seconds, err := strconv.Atoi(retryAfter); err == nil {
+					return time.Duration(seconds) * time.Second, nil
+				}
+			}
+		}
+		return 0, nil
+	})
+}
 
 type TwitchToken struct {
 	AccessToken string `json:"access_token"`
