@@ -169,7 +169,16 @@ The program auto-generates `config.json` on first run. Update these fields:
    ```
 3. Build:
    ```bash
-   go build
+   go build -o twitch-recorder-go ./cmd/twitch-recorder
+   ```
+
+   On Windows, this creates `twitch-recorder-go.exe`.
+
+4. Run:
+   ```bash
+   ./twitch-recorder-go -config ./config.json
+   # Or on Windows:
+   twitch-recorder-go.exe -config .\config.json
    ```
 
 ## v2.0.0 Breaking Changes

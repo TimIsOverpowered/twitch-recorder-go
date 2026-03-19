@@ -49,7 +49,7 @@ jobs:
 
       - name: Build binary
         run: |
-          GOOS=${{ steps.os-name.outputs.os }} GOARCH=${{ matrix.arch }} go build -o twitch-recorder-go-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }} .
+          GOOS=${{ steps.os-name.outputs.os }} GOARCH=${{ matrix.arch }} go build -o twitch-recorder-go-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }} ./cmd/twitch-recorder
 
       - name: Generate SHA256 checksums
         run: |
