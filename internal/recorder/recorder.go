@@ -3,10 +3,13 @@ package recorder
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"twitch-recorder-go/internal/api"
 	"twitch-recorder-go/internal/config"
+	"twitch-recorder-go/internal/drive"
 	"twitch-recorder-go/internal/log"
 	"twitch-recorder-go/internal/metrics"
 	"twitch-recorder-go/internal/segment"
@@ -14,17 +17,19 @@ import (
 )
 
 type Recorder struct {
-	twitchClient *twitch.Client
-	channel      string
-	metrics      *metrics.Metrics
-	config       *config.Config
+	twitchClient  *twitch.Client
+	channel       string
+	metrics       *metrics.Metrics
+	config        *config.Config
+	uploadToDrive bool
 }
 
-func NewRecorder(twitchClient *twitch.Client, channel string, cfg *config.Config) *Recorder {
+func NewRecorder(twitchClient *twitch.Client, channel string, cfg *config.Config, uploadToDrive bool) *Recorder {
 	return &Recorder{
-		twitchClient: twitchClient,
-		channel:      channel,
-		config:       cfg,
+		twitchClient:  twitchClient,
+		channel:       channel,
+		config:        cfg,
+		uploadToDrive: uploadToDrive,
 	}
 }
 
@@ -153,10 +158,14 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 	default:
 	}
 
-	outputName := r.channel
+	folderName := r.channel
 	if streamID != "" {
-		outputName = streamID
+		folderName = streamID
+	} else {
+		folderName = filepath.Base(sessionDir)
 	}
+
+	outputName := folderName
 	outputFile := fmt.Sprintf("%s/%s.mp4", sessionDir, outputName)
 	if err := downloader.Finalize(outputFile); err != nil {
 		if r.metrics != nil {
@@ -166,6 +175,24 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 	}
 
 	log.Info("Recording saved: %s", outputFile)
+
+	fileInfo, _ := os.Stat(outputFile)
+	fileSize := fileInfo.Size()
+
+	if r.uploadToDrive {
+		go func() {
+			err := drive.UploadToDrive(r.config, r.channel, folderName, outputFile)
+			success := err == nil
+
+			if r.metrics != nil {
+				r.metrics.RecordDriveUpload(fileSize, success)
+			}
+
+			if err != nil {
+				log.Warn("[%s] Failed to upload to Drive: %v", r.channel, err)
+			}
+		}()
+	}
 
 	duration := time.Since(startTime)
 	if r.config.Archive.Enabled && r.config.Archive.Endpoint != "" && r.config.Archive.Key != "" {

@@ -13,7 +13,7 @@ import (
 func TestNewRecorder(t *testing.T) {
 	client := twitch.NewClient("test_id", "test_secret", "test_oauth", nil)
 	cfg := &config.Config{}
-	recorder := NewRecorder(client, "test_channel", cfg)
+	recorder := NewRecorder(client, "test_channel", cfg, false)
 
 	assert.NotNil(t, recorder)
 	assert.Equal(t, "test_channel", recorder.channel)
@@ -25,7 +25,7 @@ func TestMonitorChannelCancellation(t *testing.T) {
 	cancel()
 
 	cfg := &config.Config{}
-	recorder := NewRecorder(client, "test_channel", cfg)
+	recorder := NewRecorder(client, "test_channel", cfg, false)
 
 	done := make(chan error)
 	go func() {
@@ -43,7 +43,7 @@ func TestMonitorChannelCancellation(t *testing.T) {
 func TestRecorderStructure(t *testing.T) {
 	client := twitch.NewClient("test_id", "test_secret", "test_oauth", nil)
 	cfg := &config.Config{}
-	recorder := NewRecorder(client, "test_channel", cfg)
+	recorder := NewRecorder(client, "test_channel", cfg, false)
 
 	assert.NotNil(t, recorder.twitchClient)
 	assert.Equal(t, "test_channel", recorder.channel)

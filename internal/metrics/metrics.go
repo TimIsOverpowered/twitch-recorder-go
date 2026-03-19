@@ -29,6 +29,12 @@ type Metrics struct {
 	archiveAPICallsFailed  int64
 	archiveAPILastCallTime time.Time
 
+	// Drive upload metrics
+	driveUploadsTotal   int64
+	driveUploadsFailed  int64
+	driveBytesUploaded  int64
+	driveLastUploadTime time.Time
+
 	// Recording metrics
 	recordingsStarted      int64
 	recordingsCompleted    int64
@@ -141,6 +147,20 @@ func (m *Metrics) RecordArchiveAPICall(success bool) {
 	}
 }
 
+func (m *Metrics) RecordDriveUpload(size int64, success bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.driveUploadsTotal++
+	m.driveLastUploadTime = time.Now()
+
+	if success {
+		m.driveBytesUploaded += size
+	} else {
+		m.driveUploadsFailed++
+	}
+}
+
 type Stats struct {
 	// Download stats
 	SegmentsDownloaded  int64         `json:"segments_downloaded"`
@@ -163,6 +183,12 @@ type Stats struct {
 	ArchiveAPICallsTotal   int64     `json:"archive_api_calls_total"`
 	ArchiveAPICallsFailed  int64     `json:"archive_api_calls_failed"`
 	ArchiveAPILastCallTime time.Time `json:"archive_api_last_call_time"`
+
+	// Drive upload stats
+	DriveUploadsTotal   int64     `json:"drive_uploads_total"`
+	DriveUploadsFailed  int64     `json:"drive_uploads_failed"`
+	DriveBytesUploaded  int64     `json:"drive_bytes_uploaded"`
+	DriveLastUploadTime time.Time `json:"drive_last_upload_time"`
 
 	// Recording stats
 	RecordingsStarted      int64         `json:"recordings_started"`
@@ -213,6 +239,10 @@ func (m *Metrics) GetStats() Stats {
 		ArchiveAPICallsTotal:   m.archiveAPICallsTotal,
 		ArchiveAPICallsFailed:  m.archiveAPICallsFailed,
 		ArchiveAPILastCallTime: m.archiveAPILastCallTime,
+		DriveUploadsTotal:      m.driveUploadsTotal,
+		DriveUploadsFailed:     m.driveUploadsFailed,
+		DriveBytesUploaded:     m.driveBytesUploaded,
+		DriveLastUploadTime:    m.driveLastUploadTime,
 		RecordingsStarted:      m.recordingsStarted,
 		RecordingsCompleted:    m.recordingsCompleted,
 		RecordingsFailed:       m.recordingsFailed,
@@ -241,6 +271,10 @@ func (m *Metrics) Reset() {
 	m.archiveAPICallsTotal = 0
 	m.archiveAPICallsFailed = 0
 	m.archiveAPILastCallTime = time.Time{}
+	m.driveUploadsTotal = 0
+	m.driveUploadsFailed = 0
+	m.driveBytesUploaded = 0
+	m.driveLastUploadTime = time.Time{}
 	m.recordingsStarted = 0
 	m.recordingsCompleted = 0
 	m.recordingsFailed = 0

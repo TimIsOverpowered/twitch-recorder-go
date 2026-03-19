@@ -72,7 +72,7 @@ Replace the example channel with Twitch channels you want to record:
 
 ### Step 5: Google Drive Upload (Optional)
 
-To enable automatic uploads to Google Drive:
+To enable automatic uploads to Google Drive after recording:
 
 1. Visit https://developers.google.com/drive/api/v3/enable-drive-api
 2. Create a new project and enable Drive API v3
@@ -82,8 +82,16 @@ To enable automatic uploads to Google Drive:
    - Enter your Client ID and Secret
    - Select scopes: `Drive API v3` → `drive`, `drive.file`, `drive.metadata`
    - Authorize and exchange for tokens
-5. Copy `refresh_token` and `access_token` to config.json
+5. Copy credentials to config.json:
+   - `drive.refresh_token`: Your refresh token
+   - `drive.access_token`: Your access token
+   - `google.client_id`: Your Google OAuth Client ID
+   - `google.client_secret`: Your Google OAuth Client Secret
 6. Run with `-drive` flag to enable uploads
+
+**Folder Structure:** Recordings are organized as `channel/streamID/file.mp4` in Drive.  
+**Token Refresh:** Expired tokens are automatically refreshed using the refresh token.  
+**Progress Tracking:** Upload progress is shown in real-time with percentage and file size.
 
 ## Configuration
 

@@ -11,13 +11,13 @@
     ],
     "twitch_app": { //CAN LEAVE EMPTY, IT WILL GENERATE ON LAUNCH.
     },
-    "drive": { //CAN BE RETRIEVED FROM GOOGLE PLAYGROUND OAUTH USING OWN CLIENT_ID & CLIENT_SECRET.
-        "refresh_token": "",
-        "access_token": ""
+    "drive": { // REQUIRED FOR GOOGLE DRIVE UPLOAD (-drive flag)
+        "refresh_token": "", // Google OAuth refresh token
+        "access_token": ""   // Google OAuth access token (auto-refreshed if expired)
     },
-    "google": { //RETRIEVE THESE FROM GOOGLE API CONSOLE
-        "client_id": "",
-        "client_secret": "",
+    "google": { // REQUIRED FOR GOOGLE DRIVE UPLOAD
+        "client_id": "",     // Google OAuth Client ID
+        "client_secret": "", // Google OAuth Client Secret
         "scopes": [
             "https://www.googleapis.com/auth/drive",
             "https://www.googleapis.com/auth/drive.appdata",

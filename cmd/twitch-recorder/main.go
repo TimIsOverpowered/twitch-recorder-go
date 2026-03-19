@@ -89,7 +89,7 @@ func main() {
 		wg.Add(1)
 		go func(ch string) {
 			defer wg.Done()
-			rec := recorder.NewRecorder(twitchClient, ch, c)
+			rec := recorder.NewRecorder(twitchClient, ch, c, uploadToDrive)
 			rec.SetMetrics(m)
 			rec.MonitorChannel(ctx)
 		}(channel)
@@ -188,6 +188,14 @@ func printMetrics(m *metrics.Metrics) {
 	log.Info("  Failed API Posts: %d", stats.ArchiveAPICallsFailed)
 	if !stats.ArchiveAPILastCallTime.IsZero() {
 		log.Info("  Last API Post: %v ago", time.Since(stats.ArchiveAPILastCallTime))
+	}
+	log.Info("")
+	log.Info("GOOGLE DRIVE STATS:")
+	log.Info("  Total Uploads: %d", stats.DriveUploadsTotal)
+	log.Info("  Failed Uploads: %d", stats.DriveUploadsFailed)
+	log.Info("  Bytes Uploaded: %.2f MB", float64(stats.DriveBytesUploaded)/1024/1024)
+	if !stats.DriveLastUploadTime.IsZero() {
+		log.Info("  Last Upload: %v ago", time.Since(stats.DriveLastUploadTime))
 	}
 	log.Info("========================================")
 }
