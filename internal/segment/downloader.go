@@ -46,6 +46,14 @@ func NewSegmentDownloader(vodDirectory, channel string, timestamp time.Time) *Se
 	}
 }
 
+func NewSegmentDownloaderFromSession(sessionDir string) *SegmentDownloader {
+	return &SegmentDownloader{
+		sessionDir: sessionDir,
+		seen:       make(map[string]bool),
+		segments:   make([]string, 0),
+	}
+}
+
 func (sd *SegmentDownloader) AddSegment(url string) bool {
 	sd.mu.Lock()
 	defer sd.mu.Unlock()

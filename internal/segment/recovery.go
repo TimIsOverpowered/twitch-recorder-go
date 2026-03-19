@@ -17,13 +17,18 @@ func RecoverIncompleteSessions(vodDirectory string, channels []string) {
 			continue
 		}
 
-		sessions, err := filepath.Glob(filepath.Join(channelDir, fmt.Sprintf("%s_*", channel)))
+		files, err := os.ReadDir(channelDir)
 		if err != nil {
 			log.Errorf("Failed to scan sessions for %s: %v", channel, err)
 			continue
 		}
 
-		for _, sessionDir := range sessions {
+		for _, f := range files {
+			if !f.IsDir() {
+				continue
+			}
+
+			sessionDir := filepath.Join(channelDir, f.Name())
 			if !isIncompleteSession(sessionDir) {
 				continue
 			}
@@ -31,12 +36,12 @@ func RecoverIncompleteSessions(vodDirectory string, channels []string) {
 			log.Infof("Found incomplete session: %s", sessionDir)
 
 			downloader := &SegmentDownloader{
-				sessionDir: filepath.Base(sessionDir),
+				sessionDir: sessionDir,
 				seen:       make(map[string]bool),
 				segments:   make([]string, 0),
 			}
 
-			outputFile := filepath.Join(channelDir, fmt.Sprintf("%s.mp4", filepath.Base(sessionDir)))
+			outputFile := filepath.Join(channelDir, fmt.Sprintf("%s.mp4", f.Name()))
 
 			if err := downloader.Finalize(outputFile); err != nil {
 				log.Errorf("Failed to finalize incomplete session %s: %v", sessionDir, err)
@@ -68,4 +73,30 @@ func IsSessionDirectory(name string, channel string) bool {
 	pattern := fmt.Sprintf(`^%s_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$`, regexp.QuoteMeta(channel))
 	matched, _ := regexp.MatchString(pattern, name)
 	return matched
+}
+
+func FindIncompleteSession(vodDirectory, channel string) (string, error) {
+	channelDir := filepath.Join(vodDirectory, channel)
+
+	if _, err := os.Stat(channelDir); os.IsNotExist(err) {
+		return "", nil
+	}
+
+	files, err := os.ReadDir(channelDir)
+	if err != nil {
+		return "", err
+	}
+
+	for _, f := range files {
+		if !f.IsDir() {
+			continue
+		}
+
+		sessionDir := filepath.Join(channelDir, f.Name())
+		if isIncompleteSession(sessionDir) {
+			return sessionDir, nil
+		}
+	}
+
+	return "", nil
 }

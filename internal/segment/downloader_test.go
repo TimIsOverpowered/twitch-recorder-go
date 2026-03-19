@@ -67,9 +67,9 @@ func TestGetSegmentFilename(t *testing.T) {
 	filename2 := sd.getSegmentFilename()
 	filename3 := sd.getSegmentFilename()
 
-	assert.Equal(t, "00001.ts", filename1)
-	assert.Equal(t, "00002.ts", filename2)
-	assert.Equal(t, "00003.ts", filename3)
+	assert.Equal(t, "1.ts", filename1)
+	assert.Equal(t, "2.ts", filename2)
+	assert.Equal(t, "3.ts", filename3)
 }
 
 func TestDownloadSegmentSuccess(t *testing.T) {

@@ -84,15 +84,26 @@ func (r *Recorder) checkAndRecord(ctx context.Context) error {
 func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 	startTime := time.Now()
 	timestamp := time.Now()
-	downloader := segment.NewSegmentDownloader(r.config.VodDirectory, r.channel, timestamp)
+
+	incompleteSession, _ := segment.FindIncompleteSession(r.config.VodDirectory, r.channel)
+	var downloader *segment.SegmentDownloader
+	var sessionDir string
+
+	if incompleteSession != "" {
+		log.Infof("Resuming incomplete session: %s", incompleteSession)
+		downloader = segment.NewSegmentDownloaderFromSession(incompleteSession)
+		sessionDir = incompleteSession
+	} else {
+		downloader = segment.NewSegmentDownloader(r.config.VodDirectory, r.channel, timestamp)
+		sessionDir = downloader.GetSessionDir()
+		log.Infof("Recording session: %s", sessionDir)
+	}
+
 	parser := segment.NewPlaylistParser(downloader)
 
 	if r.metrics != nil {
 		r.metrics.RecordRecordingStart()
 	}
-
-	sessionDir := downloader.GetSessionDir()
-	log.Infof("Recording session: %s", sessionDir)
 
 	streamIDChan := make(chan string, 1)
 	go r.pollStreamID(ctx, streamIDChan)
