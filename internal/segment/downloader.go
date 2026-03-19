@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"twitch-recorder-go/internal/log"
 )
 
 type SegmentDownloader struct {
@@ -98,7 +99,7 @@ func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string) er
 		sd.totalSize += written
 		sd.mu.Unlock()
 
-		log.Printf("Downloaded segment %d/%d (%.2f MB)", sd.downloaded, len(sd.segments), float64(sd.totalSize)/1024/1024)
+		log.Debug("Downloaded segment %d/%d (%.2f MB)", sd.downloaded, len(sd.segments), float64(sd.totalSize)/1024/1024)
 		return nil
 	}
 
@@ -110,7 +111,7 @@ func (sd *SegmentDownloader) sleepWithBackoff(attempt int) {
 	if backoff > 8*time.Second {
 		backoff = 8 * time.Second
 	}
-	log.Printf("Retrying in %v...", backoff)
+	log.Debug("Retrying in %v...", backoff)
 	time.Sleep(backoff)
 }
 
@@ -141,6 +142,6 @@ func (sd *SegmentDownloader) GetDownloadedCount() int {
 
 func (sd *SegmentDownloader) CleanupOnError() {
 	if err := os.RemoveAll(sd.sessionDir); err != nil {
-		log.Printf("Failed to cleanup session dir: %v", err)
+		log.Error("Failed to cleanup session dir: %v", err)
 	}
 }

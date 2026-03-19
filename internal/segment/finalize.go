@@ -2,11 +2,12 @@ package segment
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+
+	"twitch-recorder-go/internal/log"
 )
 
 func (sd *SegmentDownloader) Finalize(outputFile string) error {
@@ -38,7 +39,7 @@ func (sd *SegmentDownloader) Finalize(outputFile string) error {
 	}
 	f.Close()
 
-	log.Printf("Finalizing %d segments into %s", len(tsFiles), outputFile)
+	log.Info("Finalizing %d segments into %s", len(tsFiles), outputFile)
 
 	cmd := exec.Command("ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", "-movflags", "+faststart", outputFile)
 	cmd.Stdout = os.Stdout
@@ -48,18 +49,18 @@ func (sd *SegmentDownloader) Finalize(outputFile string) error {
 		return fmt.Errorf("ffmpeg failed: %w", err)
 	}
 
-	log.Printf("Successfully created %s", outputFile)
+	log.Info("Successfully created %s", outputFile)
 
 	os.Remove(concatFile)
 
 	for _, tsFile := range tsFiles {
 		if err := os.Remove(tsFile); err != nil {
-			log.Printf("Warning: failed to remove %s: %v", tsFile, err)
+			log.Warn("Failed to remove %s: %v", tsFile, err)
 		}
 	}
 
 	if err := os.Remove(sessionDir); err != nil {
-		log.Printf("Warning: failed to remove session directory: %v", err)
+		log.Warn("Failed to remove session directory: %v", err)
 	}
 
 	return nil

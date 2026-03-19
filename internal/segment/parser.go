@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/grafov/m3u8"
+	"twitch-recorder-go/internal/log"
 )
 
 type PlaylistParser struct {
@@ -75,7 +75,7 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 			pp.mu.Lock()
 			pp.isLive = false
 			pp.mu.Unlock()
-			log.Printf("Stream ended (EXT-X-ENDLIST detected)")
+			log.Info("Stream ended (EXT-X-ENDLIST detected)")
 		}
 
 		pp.mu.Lock()
@@ -89,7 +89,7 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 				if !pp.downloader.AddSegment(segment.URI) {
 					continue
 				}
-				log.Printf("New segment found: %s", segment.URI)
+				log.Debug("New segment found: %s", segment.URI)
 			}
 		}
 
@@ -130,7 +130,7 @@ func (pp *PlaylistParser) DownloadAllSegments(ctx context.Context, concurrency i
 			defer func() { <-semaphore }()
 
 			if err := pp.downloader.DownloadSegment(ctx, segmentURL); err != nil {
-				log.Printf("Failed to download segment: %v", err)
+				log.Error("Failed to download segment: %v", err)
 			}
 		}(url)
 	}

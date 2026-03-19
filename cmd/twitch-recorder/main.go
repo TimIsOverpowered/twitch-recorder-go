@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
 	"os"
 	"os/signal"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/go-resty/resty/v2"
 	"twitch-recorder-go/internal/config"
+	"twitch-recorder-go/internal/log"
 	"twitch-recorder-go/internal/recorder"
 	"twitch-recorder-go/internal/segment"
 	"twitch-recorder-go/internal/twitch"
@@ -45,17 +45,21 @@ func init() {
 }
 
 func main() {
+	log.Init()
+
 	flag.BoolVar(&uploadToDrive, "drive", false, "Upload recordings to Google Drive")
 	flag.StringVar(&cfgPath, "config", "config.json", "Path to config file")
 	flag.Parse()
 
 	c, err := loadConfig(cfgPath)
 	if err != nil {
-		log.Fatal(err)
+		log.Error("Failed to load config: %v", err)
+		os.Exit(1)
 	}
 
 	if err := segment.ValidateConfig(c.VodDirectory, c.Channels); err != nil {
-		log.Fatal(err)
+		log.Error("Invalid configuration: %v", err)
+		os.Exit(1)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -69,11 +73,11 @@ func main() {
 	for _, channel := range c.Channels {
 		user, err := twitchClient.GetUser(ctx, channel)
 		if err != nil {
-			log.Printf("Error checking user %s: %v", channel, err)
+			log.Warn("Error checking user %s: %v", channel, err)
 			continue
 		}
 		if user == nil {
-			log.Printf("%s does not exist", channel)
+			log.Info("%s does not exist", channel)
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
@@ -92,7 +96,7 @@ func main() {
 	}()
 
 	<-ctx.Done()
-	log.Println("Shutting down gracefully...")
+	log.Info("Shutting down gracefully...")
 }
 
 func loadConfig(configPath string) (*config.Config, error) {
@@ -100,7 +104,7 @@ func loadConfig(configPath string) (*config.Config, error) {
 		if err := generateDefaultConfig(configPath); err != nil {
 			return nil, err
 		}
-		log.Println("Configuration file created. Please edit it and run again.")
+		log.Info("Configuration file created. Please edit it and run again.")
 		os.Exit(0)
 	}
 

@@ -3,9 +3,9 @@ package recorder
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
+	"twitch-recorder-go/internal/log"
 	"twitch-recorder-go/internal/segment"
 	"twitch-recorder-go/internal/twitch"
 )
@@ -32,7 +32,7 @@ func (r *Recorder) MonitorChannel(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			if err := r.checkAndRecord(ctx); err != nil {
-				log.Printf("Error checking channel %s: %v", r.channel, err)
+				log.Error("Error checking channel %s: %v", r.channel, err)
 			}
 		}
 	}
@@ -48,7 +48,7 @@ func (r *Recorder) checkAndRecord(ctx context.Context) error {
 		return nil
 	}
 
-	log.Printf("%s is LIVE! Starting recording...", r.channel)
+	log.Info("%s is LIVE! Starting recording...", r.channel)
 	return r.recordStream(ctx, streams.Data[0].ID)
 }
 
@@ -58,25 +58,25 @@ func (r *Recorder) recordStream(ctx context.Context, streamID string) error {
 	parser := segment.NewPlaylistParser(downloader)
 
 	sessionDir := downloader.GetSessionDir()
-	log.Printf("Recording session: %s", sessionDir)
+	log.Info("Recording session: %s", sessionDir)
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("Context cancelled, finalizing recording...")
+			log.Info("Context cancelled, finalizing recording...")
 			return r.finalizeRecording(downloader, sessionDir)
 		default:
 		}
 
 		m3u8URL := fmt.Sprintf("%s/%s.m3u8", twitch.TwitchUsherM3U8, streamID)
 		if err := parser.FetchNewSegments(ctx, m3u8URL); err != nil {
-			log.Printf("Error fetching playlist: %v", err)
+			log.Error("Error fetching playlist: %v", err)
 			time.Sleep(5 * time.Second)
 			continue
 		}
 
 		if !parser.IsLive() {
-			log.Printf("Stream ended, finalizing recording...")
+			log.Info("Stream ended, finalizing recording...")
 			return r.finalizeRecording(downloader, sessionDir)
 		}
 
@@ -90,6 +90,6 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 		return fmt.Errorf("failed to finalize recording: %w", err)
 	}
 
-	log.Printf("Recording saved: %s", outputFile)
+	log.Info("Recording saved: %s", outputFile)
 	return nil
 }
