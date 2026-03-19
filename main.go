@@ -364,7 +364,7 @@ func getUserObject(channel string) *User {
 
 	if resp.IsError() || resp.StatusCode() != 200 {
 		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
-		log.Printf(string(resp.Body()))
+		log.Printf("%s", string(resp.Body()))
 	}
 
 	var user User
