@@ -77,11 +77,11 @@ func (r *Recorder) MonitorChannel(ctx context.Context) error {
 func (r *Recorder) checkAndRecord(ctx context.Context) error {
 	m3u8URL, err := r.twitchClient.GetLiveM3U8(ctx, r.channel)
 	if err != nil {
-		log.Errorf("[%s] %v", r.channel, err)
+		log.ErrorC(r.channel, "%v", err)
 		return nil
 	}
 
-	log.Infof("[%s] is LIVE! Starting recording...", r.channel)
+	log.InfoC(r.channel, "is LIVE! Starting recording...")
 	return r.recordStream(ctx, m3u8URL)
 }
 
@@ -316,7 +316,7 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 			}
 
 			if err != nil {
-				log.Warnf("[%s] Failed to upload to Drive: %v", r.channel, err)
+				log.WarnC(r.channel, "Failed to upload to Drive: %v", err)
 			}
 		}
 

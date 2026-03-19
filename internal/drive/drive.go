@@ -103,7 +103,7 @@ func UploadToDrive(cfg *config.Config, channel, streamOrTimestamp, localPath str
 		mimeType = "application/octet-stream"
 	}
 
-	log.Infof("[%s] Uploading to Drive... (%.2f MB)", channel, float64(fileInfo.Size())/(1024*1024))
+	log.InfofC(channel, "Uploading to Drive... (%.2f MB)", float64(fileInfo.Size())/(1024*1024))
 
 	var lastProgress int64
 	progressReader := &ProgressReader{
@@ -113,7 +113,7 @@ func UploadToDrive(cfg *config.Config, channel, streamOrTimestamp, localPath str
 			if current-lastProgress >= 1024*1024 || current == total {
 				lastProgress = current
 				percent := float64(current) / float64(total) * 100
-				log.Infof("[%s] Uploading: %.1f%% (%.2f/%.2f MB)\r", channel, percent, float64(current)/(1024*1024), float64(total)/(1024*1024))
+				log.InfofC(channel, "Uploading: %.1f%% (%.2f/%.2f MB)\r", percent, float64(current)/(1024*1024), float64(total)/(1024*1024))
 			}
 		},
 	}
@@ -131,7 +131,7 @@ func UploadToDrive(cfg *config.Config, channel, streamOrTimestamp, localPath str
 		return fmt.Errorf("failed to upload file: %w", err)
 	}
 
-	log.Infof("[%s] Uploaded %s to Drive (ID: %s)", channel, res.Name, res.Id)
+	log.InfofC(channel, "Uploaded %s to Drive (ID: %s)", res.Name, res.Id)
 	return nil
 }
 
