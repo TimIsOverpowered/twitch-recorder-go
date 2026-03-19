@@ -36,11 +36,10 @@ const (
 	TWITCH_USHER_M3U8 = "https://usher.ttvnw.net"
 )
 
+const TWITCH_CLIENT_ID = "kd1unb4b3q4t58fwlpcbzcbnm76a8fp"
+
 func getTwitchClientId() string {
-	if id := os.Getenv("TWITCH_CLIENT_ID"); id != "" {
-		return id
-	}
-	return "kd1unb4b3q4t58fwlpcbzcbnm76a8fp"
+	return os.Getenv("TWITCH_CLIENT_ID")
 }
 
 func getTwitchClientSecret() string {
