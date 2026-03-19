@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"twitch-recorder-go/internal/segment"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -106,4 +107,65 @@ func TestConfigStructure(t *testing.T) {
 	assert.Equal(t, "client_id", cfg.Twitch.ClientID)
 	assert.Equal(t, "access_token", cfg.TwitchToken.AccessToken)
 	assert.Equal(t, 3600, cfg.TwitchToken.ExpiresIn)
+}
+
+func TestValidateConfig(t *testing.T) {
+	tests := []struct {
+		name         string
+		vodDirectory string
+		channels     []string
+		expectError  bool
+	}{
+		{
+			name:         "valid config",
+			vodDirectory: "./test",
+			channels:     []string{"test_channel"},
+			expectError:  false,
+		},
+		{
+			name:         "non-existent vod directory",
+			vodDirectory: "./nonexistent",
+			channels:     []string{"test_channel"},
+			expectError:  false,
+		},
+		{
+			name:         "empty channels",
+			vodDirectory: "./test",
+			channels:     []string{},
+			expectError:  true,
+		},
+		{
+			name:         "channel with invalid characters",
+			vodDirectory: "./test",
+			channels:     []string{"test@channel"},
+			expectError:  true,
+		},
+		{
+			name:         "channel too long",
+			vodDirectory: "./test",
+			channels:     []string{"this_channel_name_is_way_too_long_for_twitch"},
+			expectError:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir, err := os.MkdirTemp("", "validate-test")
+			require.NoError(t, err)
+			defer os.RemoveAll(dir)
+
+			vodDir := dir
+			if tt.vodDirectory != "" {
+				vodDir = filepath.Join(dir, tt.vodDirectory)
+				os.MkdirAll(vodDir, 0755)
+			}
+
+			err = segment.ValidateConfig(vodDir, tt.channels)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
