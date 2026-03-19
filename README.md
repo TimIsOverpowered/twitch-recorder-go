@@ -116,9 +116,11 @@ The program auto-generates `config.json` on first run. Update these fields:
       "token_url": "https://oauth2.googleapis.com/token"
     }
   },
-  "archive_api_enabled": false,
-  "archive_api_endpoint": "",
-  "archive_api_key": ""
+  "archive": {
+    "enabled": false,
+    "endpoint": "", // Supports {channel} placeholder
+    "key": ""
+  }
 }
 ```
 

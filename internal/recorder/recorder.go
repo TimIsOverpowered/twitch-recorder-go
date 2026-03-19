@@ -168,9 +168,9 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 	log.Info("Recording saved: %s", outputFile)
 
 	duration := time.Since(startTime)
-	if r.config.ArchiveAPIEnabled && r.config.ArchiveAPIEndpoint != "" && r.config.ArchiveApiKey != "" {
+	if r.config.Archive.Enabled && r.config.Archive.Endpoint != "" && r.config.Archive.Key != "" {
 		go func() {
-			success := api.PostRecording(r.config.ArchiveAPIEndpoint, r.config.ArchiveApiKey, r.channel, streamID, outputFile, duration)
+			success := api.PostRecording(r.config.Archive.Endpoint, r.config.Archive.Key, r.channel, streamID, outputFile, duration)
 			if r.metrics != nil {
 				r.metrics.RecordArchiveAPICall(success)
 			}

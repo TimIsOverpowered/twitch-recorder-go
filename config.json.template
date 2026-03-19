@@ -29,7 +29,9 @@
         }
     },
     // ARCHIVE API INTEGRATION (OPTIONAL) - See docs for details
-    "archive_api_enabled": false,
-    "archive_api_endpoint": "", // Supports {channel} placeholder, e.g.: "https://archive.overpowered.tv/{channel}/v2/live"
-    "archive_api_key": ""
+    "archive": {
+        "enabled": false,
+        "endpoint": "", // Supports {channel} placeholder, e.g.: "https://archive.overpowered.tv/{channel}/v2/live"
+        "key": ""
+    }
 }

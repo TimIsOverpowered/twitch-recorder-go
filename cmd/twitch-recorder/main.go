@@ -206,7 +206,7 @@ func generateDefaultConfig(configPath string) error {
     "expires_in": 0,
     "token_type": ""
   },
-  "drive": {
+"drive": {
     "refresh_token": "",
     "access_token": "",
     "token_type": "",
@@ -220,10 +220,12 @@ func generateDefaultConfig(configPath string) error {
       "token_url": "https://oauth2.googleapis.com/token"
     }
   },
-  "archive_api_enabled": false,
-  // Supports {channel} placeholder, e.g.: "https://archive.overpowered.tv/{channel}/v2/live"
-  "archive_api_endpoint": "",
-  "archive_api_key": ""
+  "archive": {
+    // ARCHIVE API INTEGRATION (OPTIONAL) - See docs for details
+    "enabled": false,
+    "endpoint": "", // Supports {channel} placeholder, e.g.: "https://archive.overpowered.tv/{channel}/v2/live"
+    "key": ""
+  }
 }`
 
 	setupInstructions := `
@@ -283,12 +285,12 @@ To enable automatic uploads to Google Drive:
 STEP 6: Archive API Integration (Optional)
 -------------------------------------------
 To enable automatic posting of recording metadata to your archive API:
-1. Set "archive_api_enabled": true
-2. Set "archive_api_endpoint" to your API URL
+1. Set "archive.enabled": true
+2. Set "archive.endpoint" to your API URL
    - Supports {channel} placeholder in URL
    - Example with channel in path: "https://archive.overpowered.tv/{channel}/v2/live"
    - Example without channel in path: "https://api.xqc.wtf/v2/live"
-3. Set "archive_api_key" to your authentication key
+3. Set "archive.key" to your authentication key
 
 The recorder will automatically post the following after each successful recording:
 - Channel name (in both URL if {channel} used, and in JSON body)
