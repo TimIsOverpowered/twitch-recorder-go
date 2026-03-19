@@ -44,43 +44,74 @@ func (sd *SegmentDownloader) AddSegment(url string) bool {
 }
 
 func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string) error {
-	resp, err := http.Get(url)
-	if err != nil {
-		return fmt.Errorf("failed to request segment: %w", err)
+	maxRetries := 5
+	var lastErr error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		resp, err := http.Get(url)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to request segment (attempt %d/%d): %w", attempt+1, maxRetries, err)
+			sd.sleepWithBackoff(attempt)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("unexpected status code %d (attempt %d/%d)", resp.StatusCode, attempt+1, maxRetries)
+			resp.Body.Close()
+			sd.sleepWithBackoff(attempt)
+			continue
+		}
+
+		filename := sd.getSegmentFilename(url)
+		path := filepath.Join(sd.sessionDir, filename)
+
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			resp.Body.Close()
+			return fmt.Errorf("failed to create directory: %w", err)
+		}
+
+		out, err := os.Create(path)
+		if err != nil {
+			resp.Body.Close()
+			return fmt.Errorf("failed to create file: %w", err)
+		}
+
+		written, err := io.Copy(out, resp.Body)
+		out.Close()
+		resp.Body.Close()
+
+		if err != nil {
+			os.Remove(path)
+			return fmt.Errorf("failed to write segment: %w", err)
+		}
+
+		sd.mu.Lock()
+		sd.downloaded++
+		sd.totalSize += written
+		sd.mu.Unlock()
+
+		log.Printf("Downloaded segment %d/%d (%.2f MB)", sd.downloaded, len(sd.segments), float64(sd.totalSize)/1024/1024)
+		return nil
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	return lastErr
+}
+
+func (sd *SegmentDownloader) sleepWithBackoff(attempt int) {
+	backoff := time.Duration(1<<uint(attempt)) * time.Second
+	if backoff > 8*time.Second {
+		backoff = 8 * time.Second
 	}
-
-	filename := sd.getSegmentFilename(url)
-	path := filepath.Join(sd.sessionDir, filename)
-
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
-	}
-
-	out, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
-	}
-	defer out.Close()
-
-	written, err := io.Copy(out, resp.Body)
-	if err != nil {
-		os.Remove(path)
-		return fmt.Errorf("failed to write segment: %w", err)
-	}
-
-	sd.mu.Lock()
-	sd.downloaded++
-	sd.totalSize += written
-	sd.mu.Unlock()
-
-	log.Printf("Downloaded segment %d/%d (%.2f MB)", sd.downloaded, len(sd.segments), float64(sd.totalSize)/1024/1024)
-	return nil
+	log.Printf("Retrying in %v...", backoff)
+	time.Sleep(backoff)
 }
 
 func (sd *SegmentDownloader) getSegmentFilename(url string) string {
