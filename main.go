@@ -33,9 +33,27 @@ const (
 	TWITCH_API_BASE   = "https://api.twitch.tv/helix"
 	TWITCH_ID_API     = "https://id.twitch.tv"
 	TWITCH_GQL_API    = "https://gql.twitch.tv/gql"
-	TWITCH_CLIENT_ID  = "kd1unb4b3q4t58fwlpcbzcbnm76a8fp"
 	TWITCH_USHER_M3U8 = "https://usher.ttvnw.net"
 )
+
+func getTwitchClientId() string {
+	if id := os.Getenv("TWITCH_CLIENT_ID"); id != "" {
+		return id
+	}
+	return "kd1unb4b3q4t58fwlpcbzcbnm76a8fp"
+}
+
+func getTwitchClientSecret() string {
+	return os.Getenv("TWITCH_CLIENT_SECRET")
+}
+
+func getGoogleClientId() string {
+	return os.Getenv("GOOGLE_CLIENT_ID")
+}
+
+func getGoogleClientSecret() string {
+	return os.Getenv("GOOGLE_CLIENT_SECRET")
+}
 
 type Config struct {
 	Twitch struct {
@@ -145,6 +163,11 @@ func NewConfig(configPath string) (*Config, error) {
 	if err := json.Unmarshal(d, &config); err != nil {
 		log.Fatalf("unable to read config %v", err)
 	}
+
+	config.Twitch.ClientId = getTwitchClientId()
+	config.Twitch.ClientSecret = getTwitchClientSecret()
+	config.Google.ClientId = getGoogleClientId()
+	config.Google.ClientSecret = getGoogleClientSecret()
 
 	return config, nil
 }
@@ -886,7 +909,7 @@ func getLiveTokenSig(channel string) (*TokenSig, error) {
 	}`, channel))
 
 	resp, err := client.
-		SetHeader("Client-ID", TWITCH_CLIENT_ID).
+		SetHeader("Client-ID", getTwitchClientId()).
 		SetHeader("Origin", "https://twitch.tv").
 		SetHeader("Referer", "https://twitch.tv").
 		SetHeader("Content-Type", "text/plain;charset=UTF-8").
