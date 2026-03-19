@@ -27,6 +27,7 @@ type SegmentDownloader struct {
 	initSegment string
 	fileCounter int
 	counterMu   sync.Mutex
+	totalAdded  int
 }
 
 func NewSegmentDownloader(vodDirectory, channel string, timestamp time.Time) *SegmentDownloader {
@@ -55,6 +56,7 @@ func (sd *SegmentDownloader) AddSegment(url string) bool {
 
 	sd.seen[url] = true
 	sd.segments = append(sd.segments, url)
+	sd.totalAdded++
 	return true
 }
 
@@ -152,7 +154,7 @@ func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string) er
 			sd.metrics.RecordSegmentDownload(written, duration)
 		}
 
-		log.Debugf("Downloaded segment %d/%d (%.2f MB)", sd.downloaded, len(sd.segments), float64(sd.totalSize)/1024/1024)
+		log.Debugf("Downloaded segment %d/%d (%.2f MB)", sd.downloaded, sd.totalAdded, float64(sd.totalSize)/1024/1024)
 		return nil
 	}
 
