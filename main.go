@@ -908,7 +908,7 @@ func getLiveTokenSig(channel string) (*TokenSig, error) {
 	}`, channel))
 
 	resp, err := client.
-		SetHeader("Client-ID", getTwitchClientId()).
+		SetHeader("Client-ID", TWITCH_CLIENT_ID).
 		SetHeader("Origin", "https://twitch.tv").
 		SetHeader("Referer", "https://twitch.tv").
 		SetHeader("Content-Type", "text/plain;charset=UTF-8").
