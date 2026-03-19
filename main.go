@@ -62,7 +62,6 @@ type Config struct {
 }
 
 var config *Config
-var use_ffmpeg bool
 var upload_to_drive bool
 var cfgPath string
 var isRefreshingTwitchToken bool
@@ -115,7 +114,6 @@ func NewConfig(configPath string) (*Config, error) {
 func ParseFlags() (string, error) {
 	var configPath string
 
-	flag.BoolVar(&use_ffmpeg, "ffmpeg", false, "use ffmpeg custom logic to download instead of streamlink")
 	flag.BoolVar(&upload_to_drive, "drive", false, "upload to drive. make sure you supply refresh_token & access_token in config")
 	flag.StringVar(&configPath, "config", "./config.json", "path to config file")
 	flag.Parse()
@@ -457,21 +455,12 @@ func record(m3u8 string, channel string) error {
 		log.Printf("[%s] Got Stream Object", channel)
 	}()
 
-	if !use_ffmpeg {
-		//use streamlink
-		cmd := exec.Command("streamlink", "-o", path+fileName, "twitch.tv/"+channel, "best", "--twitch-disable-hosting", "--twitch-disable-ads", "--twitch-disable-reruns")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Run()
-	} else {
-		//use ffmpeg
-		log.Printf("[%s] Executing ffmpeg: %s", channel, "ffmpeg -y -i "+m3u8+" -c copy -copyts -start_at_zero -bsf:a aac_adtstoasc -f mp4 "+path+fileName)
-		cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "warning", "-y", "-rw_timeout", "3000000", "-i", m3u8, "-c", "copy", "-copyts", "-start_at_zero", "-bsf:a", "aac_adtstoasc", "-f", "mp4", path+fileName)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Run()
-		log.Printf("[%s] Finished downloading.. Saved at: %s", channel, path+fileName)
-	}
+	log.Printf("[%s] Executing ffmpeg: %s", channel, "ffmpeg -y -i "+m3u8+" -c copy -copyts -start_at_zero -bsf:a aac_adtstoasc -f mp4 "+path+fileName)
+	cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "warning", "-y", "-rw_timeout", "3000000", "-i", m3u8, "-c", "copy", "-copyts", "-start_at_zero", "-bsf:a", "aac_adtstoasc", "-f", "mp4", path+fileName)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Run()
+	log.Printf("[%s] Finished downloading.. Saved at: %s", channel, path+fileName)
 
 	if len(stream.StreamsData) == 0 {
 		quit <- true

@@ -6,17 +6,15 @@ This program can monitor and record multiple Twitch streams live and convert it 
 
 ## Requirements
 
-[Streamlink](https://streamlink.github.io/) If using streamlink download method (default)
-
-[Ffmpeg](https://ffmpeg.org/) If using ffmpeg download method (specify -ffmpeg (./twitch-recorder-go -ffmpeg))
+[FFmpeg](https://ffmpeg.org/download.html) Required for video recording
 
 [Twitch](https://dev.twitch.tv/console) Register a Twitch app
 
-## Drive
+## Google Drive Upload
 
-Ignore this, if you are not planning to upload to drive.
+Optional: Upload recorded videos to Google Drive.
 
-Specify -drive (./twitch-recorder-go -drive) to upload to drive.
+Use `-drive` flag to enable Drive upload (requires drive credentials in config).
 
 [Drive](https://developers.google.com/drive/api/v3/enable-drive-api) Register a Google API APP with OAuth2 & Use Google Playground OAuth2 to get Access & Refresh tokens
 
@@ -68,6 +66,11 @@ Run in a shell like cmd or bash terminal.
 ```shell script
 ./path-to-twitch-recorder-go/twitch-recorder-go -config ./config.json
 ```
+
+### Options
+
+- `-config` - Path to config file (default: ./config.json)
+- `-drive` - Enable Google Drive upload (requires drive credentials in config)
 
 ## Build
 
