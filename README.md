@@ -158,6 +158,7 @@ The program auto-generates `config.json` on first run. Update these fields:
 
 - `-config` - Path to config file (default: ./config.json)
 - `-drive` - Enable Google Drive upload (requires drive credentials in config)
+- `-loglevel` - Set log level: error, warn, info, debug (default: info)
 
 ## Build from Source
 
