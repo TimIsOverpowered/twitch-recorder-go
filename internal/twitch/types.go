@@ -1,12 +1,5 @@
 package twitch
 
-type Client interface {
-	GetUser(login string) (*User, error)
-	GetStreams(userLogin string) (*Streams, error)
-	RefreshToken() error
-	CheckAccessToken() bool
-}
-
 type User struct {
 	ID    string `json:"id"`
 	Login string `json:"login"`
@@ -20,4 +13,10 @@ type Streams struct {
 		Type      string `json:"type"`
 		StartedAt string `json:"started_at"`
 	} `json:"data"`
+}
+
+type TwitchToken struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int    `json:"expires_in"`
+	TokenType   string `json:"token_type"`
 }

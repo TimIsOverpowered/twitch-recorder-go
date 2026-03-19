@@ -1,0 +1,230 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"log"
+	"os"
+	"os/signal"
+	"strconv"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/go-resty/resty/v2"
+	"twitch-recorder-go/internal/config"
+	"twitch-recorder-go/internal/recorder"
+	"twitch-recorder-go/internal/segment"
+	"twitch-recorder-go/internal/twitch"
+)
+
+var (
+	cfgPath           string
+	uploadToDrive     bool
+	httpClient        *resty.Client
+	isRefreshingToken bool
+	tokenMu           sync.Mutex
+)
+
+func init() {
+	httpClient = resty.New().
+		SetTimeout(30 * time.Second).
+		SetRetryCount(3).
+		SetRetryWaitTime(time.Second).
+		SetRetryAfter(func(c *resty.Client, r *resty.Response) (time.Duration, error) {
+			if r.StatusCode() >= 429 && r.StatusCode() < 500 {
+				retryAfter := r.Header().Get("Retry-After")
+				if retryAfter != "" {
+					if seconds, err := strconv.Atoi(retryAfter); err == nil {
+						return time.Duration(seconds) * time.Second, nil
+					}
+				}
+			}
+			return 0, nil
+		})
+}
+
+func main() {
+	flag.BoolVar(&uploadToDrive, "drive", false, "Upload recordings to Google Drive")
+	flag.StringVar(&cfgPath, "config", "config.json", "Path to config file")
+	flag.Parse()
+
+	c, err := loadConfig(cfgPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := segment.ValidateConfig(c.VodDirectory, c.Channels); err != nil {
+		log.Fatal(err)
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	segment.RecoverIncompleteSessions(c.VodDirectory, c.Channels)
+
+	twitchClient := createTwitchClient(c)
+
+	var wg sync.WaitGroup
+	for _, channel := range c.Channels {
+		user, err := twitchClient.GetUser(ctx, channel)
+		if err != nil {
+			log.Printf("Error checking user %s: %v", channel, err)
+			continue
+		}
+		if user == nil {
+			log.Printf("%s does not exist", channel)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		wg.Add(1)
+		go func(ch string) {
+			defer wg.Done()
+			rec := recorder.NewRecorder(twitchClient, ch)
+			rec.MonitorChannel(ctx)
+		}(channel)
+	}
+
+	go func() {
+		wg.Wait()
+		cancel()
+	}()
+
+	<-ctx.Done()
+	log.Println("Shutting down gracefully...")
+}
+
+func loadConfig(configPath string) (*config.Config, error) {
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if err := generateDefaultConfig(configPath); err != nil {
+			return nil, err
+		}
+		log.Println("Configuration file created. Please edit it and run again.")
+		os.Exit(0)
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg.Twitch.ClientID = overrideWithEnv(cfg.Twitch.ClientID, config.GetTwitchClientID())
+	cfg.Twitch.ClientSecret = overrideWithEnv(cfg.Twitch.ClientSecret, config.GetTwitchClientSecret())
+
+	return cfg, nil
+}
+
+func createTwitchClient(c *config.Config) *twitch.Client {
+	clientID := c.Twitch.ClientID
+	if clientID == "" {
+		clientID = config.GetTwitchClientID()
+	}
+
+	clientSecret := c.Twitch.ClientSecret
+	if clientSecret == "" {
+		clientSecret = config.GetTwitchClientSecret()
+	}
+
+	return twitch.NewClient(clientID, clientSecret, c.Twitch.OAuthKey, httpClient)
+}
+
+func overrideWithEnv(cfgVal, envVal string) string {
+	if envVal != "" {
+		return envVal
+	}
+	return cfgVal
+}
+
+func generateDefaultConfig(configPath string) error {
+	defaultConfig := `{
+  "twitch": {
+    "client_id": "YOUR_TWITCH_CLIENT_ID",
+    "client_secret": "YOUR_TWITCH_CLIENT_SECRET",
+    "oauth_key": ""
+  },
+  "vod_directory": "./recordings",
+  "channels": ["example_channel"],
+  "twitch_app": {
+    "access_token": "",
+    "expires_in": 0,
+    "token_type": ""
+  },
+  "drive": {
+    "refresh_token": "",
+    "access_token": "",
+    "token_type": "",
+    "expiry": "0001-01-01T00:00:00Z"
+  },
+  "google": {
+    "client_id": "",
+    "client_secret": "",
+    "scopes": ["https://www.googleapis.com/auth/drive.file"],
+    "endpoint": {
+      "token_url": "https://oauth2.googleapis.com/token"
+    }
+  }
+}`
+
+	setupInstructions := `
+
+================================================================================
+CONFIGURATION GUIDE - Twitch Recorder Go v2.0.0
+================================================================================
+
+STEP 1: Get Twitch API Credentials
+-----------------------------------
+1. Visit https://dev.twitch.tv/console
+2. Create a new application (name it anything, e.g., "Twitch Recorder")
+3. Set OAuth Redirect URL to: http://localhost:8080/callback
+4. Copy your Client ID and Client Secret
+5. Replace "YOUR_TWITCH_CLIENT_ID" and "YOUR_TWITCH_CLIENT_SECRET" in config.json
+
+STEP 2: Get Twitch OAuth Key (Optional - Recommended for Turbo users)
+----------------------------------------------------------------------
+The OAuth key bypasses ads if you have Twitch Turbo and enables higher qualities.
+
+To get your Twitch auth token:
+1. Log in to https://twitch.tv in your browser
+2. Open Developer Console (F12 or Ctrl+Shift+I / Cmd+Option+I on Mac)
+3. Go to Console tab
+4. Paste and run this command:
+   document.cookie.split("; ").find(item=>item.startsWith("auth-token="))?.split("=")[1]
+5. Copy the 30-character result
+6. Add to config.json as "oauth_key" (leave empty if not using)
+
+⚠️ This token grants full account access - keep it secret!
+To revoke: Change password or visit https://www.twitch.tv/settings/security
+
+STEP 3: Configure Recording Directory
+--------------------------------------
+Change "vod_directory": "./recordings" to your preferred path.
+Example (Windows): "vod_directory": "C:\\Users\\YourName\\TwitchRecordings"
+Example (Mac/Linux): "vod_directory": "/home/yourname/twitch-recordings"
+
+STEP 4: Add Channels to Monitor
+--------------------------------
+Replace "example_channel" with the Twitch channel names you want to record.
+You can add multiple channels:
+"channels": ["channel1", "channel2", "channel3"]
+
+STEP 5: Google Drive Upload (Optional)
+---------------------------------------
+To enable automatic uploads to Google Drive:
+1. Visit https://developers.google.com/drive/api/v3/enable-drive-api
+2. Create a new project and enable Drive API
+3. Create OAuth 2.0 credentials
+4. Use https://developers.google.com/oauthplayground/ to get tokens:
+   - Select Drive API v3 scopes (drive, drive.file, drive.metadata)
+   - Authorize and exchange for tokens
+5. Fill in "client_id", "client_secret", "refresh_token", and "access_token"
+6. Run with -drive flag to enable uploads
+
+================================================================================
+After configuring, save this file and run twitch-recorder-go again!
+================================================================================
+`
+
+	fullConfig := defaultConfig + setupInstructions
+	return os.WriteFile(configPath, []byte(fullConfig), 0644)
+}
