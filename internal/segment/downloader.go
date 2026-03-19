@@ -50,6 +50,39 @@ func (sd *SegmentDownloader) AddSegment(url string) bool {
 	return true
 }
 
+func (sd *SegmentDownloader) DownloadQueuedSegments(ctx context.Context, concurrency int) {
+	sd.mu.Lock()
+	segments := make([]string, len(sd.segments))
+	copy(segments, sd.segments)
+	sd.segments = make([]string, 0)
+	sd.mu.Unlock()
+
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, concurrency)
+
+	for _, url := range segments {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		wg.Add(1)
+		semaphore <- struct{}{}
+
+		go func(segmentURL string) {
+			defer wg.Done()
+			defer func() { <-semaphore }()
+
+			if err := sd.DownloadSegment(ctx, segmentURL); err != nil {
+				log.Errorf("Failed to download segment: %v", err)
+			}
+		}(url)
+	}
+
+	wg.Wait()
+}
+
 func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string) error {
 	maxRetries := 5
 	var lastErr error

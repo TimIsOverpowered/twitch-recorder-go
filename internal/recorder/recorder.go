@@ -138,6 +138,8 @@ func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 			}
 		}
 
+		downloader.DownloadQueuedSegments(ctx, 4)
+
 		time.Sleep(3 * time.Second)
 	}
 }

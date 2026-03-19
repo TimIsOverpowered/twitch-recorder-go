@@ -87,7 +87,7 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 			log.Infof("Found init segment: %s", pp.initSegment)
 		}
 
-		if len(mediaPlaylist.Segments) > 0 {
+		if len(mediaPlaylist.Segments) > 0 && mediaPlaylist.Segments[0] != nil {
 			firstSeg := mediaPlaylist.Segments[0].URI
 			if strings.HasSuffix(firstSeg, ".mp4") {
 				pp.format = "mp4"
@@ -107,6 +107,9 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 
 		if hasNewSegments {
 			for _, segment := range mediaPlaylist.Segments {
+				if segment == nil || segment.URI == "" {
+					continue
+				}
 				if !pp.downloader.AddSegment(segment.URI) {
 					continue
 				}
