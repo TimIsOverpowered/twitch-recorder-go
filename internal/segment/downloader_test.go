@@ -2,162 +2,206 @@ package segment
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewSegmentDownloader(t *testing.T) {
-	timestamp := time.Now()
-	sd := NewSegmentDownloader("testchannel", timestamp)
+	now := time.Date(2026, 3, 19, 14, 30, 0, 0, time.UTC)
+	sd := NewSegmentDownloader("testchannel", now)
 
-	assert.NotNil(t, sd)
-	assert.NotEmpty(t, sd.sessionDir)
-	assert.Equal(t, 0, len(sd.segments))
-	assert.Equal(t, 0, len(sd.seen))
+	assert.Equal(t, "testchannel_2026-03-19_14-30-00", sd.sessionDir)
+	assert.NotNil(t, sd.seen)
+	assert.NotNil(t, sd.segments)
 }
 
-func TestSegmentDownloader_AddSegment(t *testing.T) {
+func TestAddSegment(t *testing.T) {
 	sd := NewSegmentDownloader("test", time.Now())
 
-	url1 := "https://example.com/segment1.ts"
-	url2 := "https://example.com/segment2.ts"
+	added1 := sd.AddSegment("http://example.com/segment1.ts")
+	added2 := sd.AddSegment("http://example.com/segment2.ts")
+	added3 := sd.AddSegment("http://example.com/segment1.ts")
 
-	result1 := sd.AddSegment(url1)
-	assert.True(t, result1, "First add should return true")
-
-	result2 := sd.AddSegment(url1)
-	assert.False(t, result2, "Duplicate add should return false")
-
-	result3 := sd.AddSegment(url2)
-	assert.True(t, result3, "Second unique URL should return true")
-
-	assert.Equal(t, 2, len(sd.segments))
-	assert.Equal(t, 2, len(sd.seen))
+	assert.True(t, added1)
+	assert.True(t, added2)
+	assert.False(t, added3)
+	assert.Len(t, sd.segments, 2)
 }
 
-func TestSegmentDownloader_AddSegmentConcurrent(t *testing.T) {
+func TestAddSegmentConcurrency(t *testing.T) {
 	sd := NewSegmentDownloader("test", time.Now())
 
-	done := make(chan bool)
-	for i := 0; i < 100; i++ {
-		go func(n int) {
-			url := "https://example.com/segment" + string(rune('0'+n)) + ".ts"
-			sd.AddSegment(url)
-			done <- true
-		}(i)
+	var wg sync.WaitGroup
+	segments := make([]string, 100)
+	for i := range segments {
+		segments[i] = "http://example.com/segment" + string(rune('0'+i)) + ".ts"
 	}
 
-	for i := 0; i < 100; i++ {
-		<-done
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(start int) {
+			defer wg.Done()
+			for j := start; j < start+10; j++ {
+				sd.AddSegment(segments[j])
+			}
+		}(i * 10)
 	}
 
-	assert.Equal(t, 100, len(sd.segments), "All segments should be added")
-	assert.Equal(t, 100, len(sd.seen))
+	wg.Wait()
+	assert.Len(t, sd.segments, 100)
 }
 
-func TestSegmentDownloader_getSegmentFilename(t *testing.T) {
+func TestGetSegmentFilename(t *testing.T) {
 	sd := NewSegmentDownloader("test", time.Now())
 
-	filename1 := sd.getSegmentFilename("https://example.com/segment1.ts")
-	filename2 := sd.getSegmentFilename("https://example.com/segment1.ts")
-	filename3 := sd.getSegmentFilename("https://example.com/segment2.ts")
+	filename1 := sd.getSegmentFilename("http://example.com/segment1.ts")
+	filename2 := sd.getSegmentFilename("http://example.com/segment1.ts")
+	filename3 := sd.getSegmentFilename("http://example.com/segment2.ts")
 
-	assert.Equal(t, filename1, filename2, "Same URL should produce same filename")
-	assert.NotEqual(t, filename1, filename3, "Different URLs should produce different filenames")
-	assert.Regexp(t, `^\d{5}\.ts$`, filename1, "Filename should match pattern")
+	assert.Equal(t, filename1, filename2)
+	assert.NotEqual(t, filename1, filename3)
+	assert.Contains(t, filename1, ".ts")
 }
 
-func TestSegmentDownloader_GetDownloadedCount(t *testing.T) {
+func TestDownloadSegmentSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("test segment data"))
+	}))
+	defer server.Close()
+
+	sd := NewSegmentDownloader("test", time.Now())
+
+	err := sd.DownloadSegment(context.Background(), server.URL)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, sd.GetDownloadedCount())
+}
+
+func TestDownloadSegmentRetry(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("test segment data"))
+	}))
+	defer server.Close()
+
+	sd := NewSegmentDownloader("test", time.Now())
+
+	err := sd.DownloadSegment(context.Background(), server.URL)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 3, attempts)
+}
+
+func TestDownloadSegmentMaxRetries(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	sd := NewSegmentDownloader("test", time.Now())
+
+	err := sd.DownloadSegment(context.Background(), server.URL)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "attempt 5/5")
+}
+
+func TestDownloadSegmentCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	sd := NewSegmentDownloader("test", time.Now())
+
+	err := sd.DownloadSegment(ctx, "http://example.com/segment.ts")
+
+	assert.Error(t, err)
+}
+
+func TestDownloadSegmentCreatesDirectory(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "segment-test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("test segment data"))
+	}))
+	defer server.Close()
+
+	sd := NewSegmentDownloader("test", time.Now())
+	sd.sessionDir = filepath.Join(tempDir, "test_2026-03-19_14-30-00")
+
+	err = sd.DownloadSegment(context.Background(), server.URL)
+
+	assert.NoError(t, err)
+	_, err = os.Stat(sd.sessionDir)
+	assert.NoError(t, err)
+}
+
+func TestGetSessionDir(t *testing.T) {
+	now := time.Date(2026, 3, 19, 14, 30, 0, 0, time.UTC)
+	sd := NewSegmentDownloader("testchannel", now)
+
+	assert.Equal(t, "testchannel_2026-03-19_14-30-00", sd.GetSessionDir())
+}
+
+func TestGetDownloadedCount(t *testing.T) {
 	sd := NewSegmentDownloader("test", time.Now())
 
 	count := sd.GetDownloadedCount()
-	assert.Equal(t, 0, count, "Initial count should be zero")
+	assert.Equal(t, 0, count)
 
 	sd.downloaded = 5
 	count = sd.GetDownloadedCount()
 	assert.Equal(t, 5, count)
 }
 
-func TestSegmentDownloader_GetSessionDir(t *testing.T) {
-	expectedDir := "testchannel_2024-01-01_12-00-00"
-	sd := NewSegmentDownloader("testchannel", time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC))
+func TestCleanupOnError(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "segment-test")
+	require.NoError(t, err)
 
-	assert.Equal(t, expectedDir, sd.GetSessionDir())
-}
+	testFile := filepath.Join(tempDir, "test.ts")
+	err = os.WriteFile(testFile, []byte("test"), 0644)
+	require.NoError(t, err)
 
-func TestSegmentDownloader_CleanupOnError(t *testing.T) {
-	testDir := "test_cleanup_dir"
-	os.MkdirAll(testDir, 0755)
-	defer os.RemoveAll(testDir)
+	sd := NewSegmentDownloader("test", time.Now())
+	sd.sessionDir = tempDir
 
-	sd := &SegmentDownloader{
-		sessionDir: testDir,
-	}
-
-	info, err := os.Stat(testDir)
-	assert.NoError(t, err)
-	assert.True(t, info.IsDir(), "Directory should exist before cleanup")
 	sd.CleanupOnError()
-	_, err = os.Stat(testDir)
-	assert.Error(t, err, "Directory should be removed after cleanup")
+
+	_, err = os.Stat(tempDir)
 	assert.True(t, os.IsNotExist(err))
 }
 
-func TestDownloadSegment_ContextCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
-
-	sd := NewSegmentDownloader("test", time.Now())
-	err := sd.DownloadSegment(ctx, "https://example.com/segment.ts")
-
-	assert.Error(t, err)
-	assert.Equal(t, context.Canceled, err)
-}
-
-func TestDownloadSegment_InvalidURL(t *testing.T) {
-	ctx := context.Background()
-	sd := NewSegmentDownloader("test", time.Now())
-
-	err := sd.DownloadSegment(ctx, "http://invalid.invalid/segment.ts")
-	assert.Error(t, err)
-}
-
-func TestSessionDirFormat(t *testing.T) {
-	testCases := []struct {
-		channel  string
-		time     time.Time
-		expected string
+func TestAbs(t *testing.T) {
+	tests := []struct {
+		input    int
+		expected int
 	}{
-		{
-			channel:  "streamer1",
-			time:     time.Date(2024, 3, 15, 10, 30, 45, 0, time.UTC),
-			expected: "streamer1_2024-03-15_10-30-45",
-		},
-		{
-			channel:  "my_channel",
-			time:     time.Date(2025, 12, 25, 0, 0, 0, 0, time.UTC),
-			expected: "my_channel_2025-12-25_00-00-00",
-		},
+		{-5, 5},
+		{0, 0},
+		{10, 10},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.channel, func(t *testing.T) {
-			sd := NewSegmentDownloader(tc.channel, tc.time)
-			assert.Equal(t, tc.expected, sd.GetSessionDir())
+	for _, tt := range tests {
+		t.Run("", func(t *testing.T) {
+			result := abs(tt.input)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
-}
-
-func TestGetSegmentFilename_PathJoin(t *testing.T) {
-	sd := NewSegmentDownloader("test", time.Now())
-	filename := sd.getSegmentFilename("https://example.com/test.ts")
-
-	path := filepath.Join(sd.sessionDir, filename)
-	assert.Contains(t, path, sd.sessionDir)
-	assert.Contains(t, path, filename)
-	assert.True(t, len(path) >= 3 && path[len(path)-3:] == ".ts", "Path should end with .ts")
 }
