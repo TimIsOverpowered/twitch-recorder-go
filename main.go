@@ -788,7 +788,7 @@ func MeasureTransferRate() func(int64) string {
 	start := time.Now()
 
 	return func(bytes int64) string {
-		seconds := int64(time.Now().Sub(start).Seconds())
+		seconds := int64(time.Since(start).Seconds())
 		if seconds < 1 {
 			return fmt.Sprintf("%s/s", FileSizeFormat(bytes, false))
 		}
