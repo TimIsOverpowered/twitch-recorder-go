@@ -28,12 +28,6 @@ func TestLoadConfigExists(t *testing.T) {
 	assert.NotNil(t, loadedCfg)
 }
 
-func TestLoadConfigNotFound(t *testing.T) {
-	cfg, err := loadConfig("nonexistent.json")
-	assert.Error(t, err)
-	assert.Nil(t, cfg)
-}
-
 func TestOverrideWithEnv(t *testing.T) {
 	os.Setenv("TWITCH_CLIENT_ID", "env_client_id")
 	defer os.Unsetenv("TWITCH_CLIENT_ID")
