@@ -82,7 +82,7 @@ func TestDownloadSegmentSuccess(t *testing.T) {
 	sd := NewSegmentDownloader(".", "test", time.Now())
 	defer sd.CleanupOnError()
 
-	err := sd.DownloadSegment(context.Background(), server.URL)
+	err := sd.DownloadSegment(context.Background(), server.URL, 1)
 
 	assert.NoError(t, err)
 	assert.Equal(t, 1, sd.GetDownloadedCount())
@@ -104,7 +104,7 @@ func TestDownloadSegmentRetry(t *testing.T) {
 	sd := NewSegmentDownloader(".", "test", time.Now())
 	defer sd.CleanupOnError()
 
-	err := sd.DownloadSegment(context.Background(), server.URL)
+	err := sd.DownloadSegment(context.Background(), server.URL, 1)
 
 	assert.NoError(t, err)
 	assert.Equal(t, 3, attempts)
@@ -119,7 +119,7 @@ func TestDownloadSegmentMaxRetries(t *testing.T) {
 	sd := NewSegmentDownloader(".", "test", time.Now())
 	defer sd.CleanupOnError()
 
-	err := sd.DownloadSegment(context.Background(), server.URL)
+	err := sd.DownloadSegment(context.Background(), server.URL, 1)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "attempt 5/5")
@@ -131,7 +131,7 @@ func TestDownloadSegmentCancel(t *testing.T) {
 
 	sd := NewSegmentDownloader(".", "test", time.Now())
 
-	err := sd.DownloadSegment(ctx, "http://example.com/segment.ts")
+	err := sd.DownloadSegment(ctx, "http://example.com/segment.ts", 1)
 
 	assert.Error(t, err)
 }
@@ -150,7 +150,7 @@ func TestDownloadSegmentCreatesDirectory(t *testing.T) {
 	sd := NewSegmentDownloader(".", "test", time.Now())
 	sd.sessionDir = filepath.Join(tempDir, "test_2026-03-19_14-30-00")
 
-	err = sd.DownloadSegment(context.Background(), server.URL)
+	err = sd.DownloadSegment(context.Background(), server.URL, 1)
 
 	assert.NoError(t, err)
 	_, err = os.Stat(sd.sessionDir)

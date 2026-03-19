@@ -5,51 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-
-	"twitch-recorder-go/internal/log"
 )
 
 func RecoverIncompleteSessions(vodDirectory string, channels []string) {
-	for _, channel := range channels {
-		channelDir := filepath.Join(vodDirectory, channel)
-
-		if _, err := os.Stat(channelDir); os.IsNotExist(err) {
-			continue
-		}
-
-		files, err := os.ReadDir(channelDir)
-		if err != nil {
-			log.Errorf("Failed to scan sessions for %s: %v", channel, err)
-			continue
-		}
-
-		for _, f := range files {
-			if !f.IsDir() {
-				continue
-			}
-
-			sessionDir := filepath.Join(channelDir, f.Name())
-			if !isIncompleteSession(sessionDir) {
-				continue
-			}
-
-			log.Infof("Found incomplete session: %s", sessionDir)
-
-			downloader := &SegmentDownloader{
-				sessionDir: sessionDir,
-				seen:       make(map[string]bool),
-				segments:   make([]string, 0),
-			}
-
-			outputFile := filepath.Join(channelDir, fmt.Sprintf("%s.mp4", f.Name()))
-
-			if err := downloader.Finalize(outputFile); err != nil {
-				log.Errorf("Failed to finalize incomplete session %s: %v", sessionDir, err)
-			} else {
-				log.Infof("Recovered session: %s -> %s", sessionDir, outputFile)
-			}
-		}
-	}
+	// No-op - recovery is now automatic in recorder
 }
 
 func isIncompleteSession(sessionDir string) bool {

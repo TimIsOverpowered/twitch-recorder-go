@@ -58,6 +58,8 @@ func main() {
 
 	log.Init(logLevel)
 
+	log.Info("Twitch Recorder starting...")
+
 	c, err := loadConfig(cfgPath)
 	if err != nil {
 		log.Errorf("Failed to load config: %v", err)
@@ -72,26 +74,42 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	log.Info("Recovering incomplete sessions...")
+	recoverStart := time.Now()
 	segment.RecoverIncompleteSessions(c.VodDirectory, c.Channels)
+	log.Infof("Recovery complete in %v", time.Since(recoverStart))
 
 	m := metrics.NewMetrics()
 
 	twitchClient := createTwitchClient(c)
 	twitchClient.SetMetrics(m)
 
-	var wg sync.WaitGroup
-	for _, channel := range c.Channels {
-		user, err := twitchClient.GetUser(ctx, channel)
-		if err != nil {
-			log.Warn("Error checking user %s: %v", channel, err)
-			continue
-		}
-		if user == nil {
-			log.Infof("%s does not exist", channel)
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
+	log.Info("Validating channels...")
+	validChannels := make([]string, 0, len(c.Channels))
+	var valWg sync.WaitGroup
 
+	for _, channel := range c.Channels {
+		valWg.Add(1)
+		go func(ch string) {
+			defer valWg.Done()
+			user, err := twitchClient.GetUser(ctx, ch)
+			if err != nil {
+				log.Warn("Error checking user %s: %v", ch, err)
+				return
+			}
+			if user == nil {
+				log.Infof("%s does not exist", ch)
+				return
+			}
+			validChannels = append(validChannels, ch)
+		}(channel)
+	}
+	valWg.Wait()
+
+	log.Infof("Starting monitors for %d valid channels", len(validChannels))
+
+	var wg sync.WaitGroup
+	for _, channel := range validChannels {
 		wg.Add(1)
 		go func(ch string) {
 			defer wg.Done()

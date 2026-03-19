@@ -9,8 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grafov/m3u8"
 	"twitch-recorder-go/internal/log"
+
+	"github.com/grafov/m3u8"
 )
 
 type PlaylistParser struct {
@@ -84,41 +85,67 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 		if mediaPlaylist.Map != nil && pp.initSegment == "" {
 			pp.initSegment = mediaPlaylist.Map.URI
 			pp.downloader.SetInitSegment(pp.initSegment)
-			log.Infof("Found init segment: %s", pp.initSegment)
+			log.Debugf("Found init segment: %s", pp.initSegment)
 		}
 
 		if len(mediaPlaylist.Segments) > 0 && mediaPlaylist.Segments[0] != nil {
 			firstSeg := mediaPlaylist.Segments[0].URI
 			if strings.HasSuffix(firstSeg, ".mp4") {
 				pp.format = "mp4"
-				log.Info("Detected fMP4 format")
+				log.Debugf("Detected fMP4 format")
 			} else {
 				pp.format = "ts"
-				log.Info("Detected TS format")
+				log.Debugf("Detected TS format")
 			}
 			pp.downloader.SetFormat(pp.format)
 		}
 
 		pp.mu.Lock()
-		currentSeq := int(mediaPlaylist.SeqNo)
-		hasNewSegments := currentSeq > pp.lastSeq
-		pp.lastSeq = currentSeq
+		playlistStartSeq := int(mediaPlaylist.SeqNo)
+		lastSeq := pp.lastSeq
 		pp.mu.Unlock()
 
-		if hasNewSegments {
-			for _, segment := range mediaPlaylist.Segments {
-				if segment == nil || segment.URI == "" {
-					continue
-				}
-				if !pp.downloader.AddSegment(segment.URI) {
-					continue
-				}
-				log.Debugf("New segment found: %s", segment.URI)
+		highestAddedSeq := lastSeq
+
+		for i, segment := range mediaPlaylist.Segments {
+			if segment == nil || segment.URI == "" {
+				continue
 			}
+
+			// Calculate this segment's sequence number
+			segmentSeq := playlistStartSeq + i
+
+			// Skip if this segment was already downloaded
+			if segmentSeq <= lastSeq {
+				log.Debugf("Skipping already-downloaded segment: seq=%d", segmentSeq)
+				continue
+			}
+
+			if !pp.downloader.AddSegment(segment.URI) {
+				continue
+			}
+
+			// Track the highest sequence number we actually added
+			if segmentSeq > highestAddedSeq {
+				highestAddedSeq = segmentSeq
+			}
+
+			log.Debugf("New segment found: seq=%d, url=%s", segmentSeq, segment.URI[:min(50, len(segment.URI))])
 		}
+
+		// Update lastSeq to the highest sequence number we actually added
+		pp.mu.Lock()
+		if highestAddedSeq > pp.lastSeq {
+			pp.lastSeq = highestAddedSeq
+		}
+		pp.mu.Unlock()
 
 	default:
 		return fmt.Errorf("unknown playlist type: %v", listType)
+	}
+
+	if err := pp.downloader.SavePlaylist(body.Bytes(), m3u8URL); err != nil {
+		log.Debugf("Failed to save playlist marker: %v", err)
 	}
 
 	return nil
@@ -130,35 +157,14 @@ func (pp *PlaylistParser) IsLive() bool {
 	return pp.isLive
 }
 
-func (pp *PlaylistParser) DownloadAllSegments(ctx context.Context, concurrency int) error {
+func (pp *PlaylistParser) SetLastSeq(seq int) {
 	pp.mu.Lock()
-	segments := make([]string, len(pp.downloader.segments))
-	copy(segments, pp.downloader.segments)
-	pp.mu.Unlock()
+	defer pp.mu.Unlock()
+	pp.lastSeq = seq
+}
 
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, concurrency)
-
-	for _, url := range segments {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		wg.Add(1)
-		semaphore <- struct{}{}
-
-		go func(segmentURL string) {
-			defer wg.Done()
-			defer func() { <-semaphore }()
-
-			if err := pp.downloader.DownloadSegment(ctx, segmentURL); err != nil {
-				log.Errorf("Failed to download segment: %v", err)
-			}
-		}(url)
-	}
-
-	wg.Wait()
-	return nil
+func (pp *PlaylistParser) GetLastSeq() int {
+	pp.mu.Lock()
+	defer pp.mu.Unlock()
+	return pp.lastSeq
 }

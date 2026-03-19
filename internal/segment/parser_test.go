@@ -32,29 +32,22 @@ func TestIsLive(t *testing.T) {
 	assert.False(t, parser.IsLive())
 }
 
-func TestDownloadAllSegmentsCancellation(t *testing.T) {
+func TestDownloadQueuedSegmentsCancellation(t *testing.T) {
 	sd := NewSegmentDownloader(".", "test", time.Now())
 	sd.AddSegment("http://example.com/seg1.ts")
 	sd.AddSegment("http://example.com/seg2.ts")
 
-	parser := NewPlaylistParser(sd)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := parser.DownloadAllSegments(ctx, 4)
-
-	assert.Error(t, err)
+	sd.DownloadQueuedSegments(ctx, 4)
 }
 
-func TestDownloadAllSegmentsEmpty(t *testing.T) {
+func TestDownloadQueuedSegmentsEmpty(t *testing.T) {
 	sd := NewSegmentDownloader(".", "test", time.Now())
-	parser := NewPlaylistParser(sd)
 
 	ctx := context.Background()
-	err := parser.DownloadAllSegments(ctx, 4)
-
-	assert.NoError(t, err)
+	sd.DownloadQueuedSegments(ctx, 4)
 }
 
 func TestPlaylistParserStructure(t *testing.T) {

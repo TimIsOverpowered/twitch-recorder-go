@@ -161,7 +161,7 @@ func TestContextCancellation(t *testing.T) {
 
 	sd := segment.NewSegmentDownloader(".", "test", time.Now())
 
-	err := sd.DownloadSegment(ctx, "http://example.com/segment.ts")
+	err := sd.DownloadSegment(ctx, "http://example.com/segment.ts", 1)
 
 	assert.Error(t, err)
 }

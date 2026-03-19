@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-resty/resty/v2"
 	"github.com/stretchr/testify/assert"
 	"twitch-recorder-go/internal/config"
 	"twitch-recorder-go/internal/twitch"
@@ -20,9 +21,9 @@ func TestNewRecorder(t *testing.T) {
 }
 
 func TestMonitorChannelCancellation(t *testing.T) {
-	client := twitch.NewClient("test_id", "test_secret", "test_oauth", nil)
+	httpClient := resty.New().SetTimeout(time.Second)
+	client := twitch.NewClient("test_id", "test_secret", "test_oauth", httpClient)
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
 
 	cfg := &config.Config{}
 	recorder := NewRecorder(client, "test_channel", cfg, false)
@@ -31,6 +32,9 @@ func TestMonitorChannelCancellation(t *testing.T) {
 	go func() {
 		done <- recorder.MonitorChannel(ctx)
 	}()
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
 
 	select {
 	case err := <-done:
