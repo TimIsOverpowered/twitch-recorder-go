@@ -11,33 +11,23 @@ import (
 	"time"
 
 	"twitch-recorder-go/internal/log"
-	"twitch-recorder-go/internal/ratelimit"
 )
 
 type SegmentDownloader struct {
-	sessionDir  string
-	seen        map[string]bool
-	segments    []string
-	mu          sync.Mutex
-	downloaded  int
-	totalSize   int64
-	rateLimiter *ratelimit.Limiter
+	sessionDir string
+	seen       map[string]bool
+	segments   []string
+	mu         sync.Mutex
+	downloaded int
+	totalSize  int64
 }
 
 func NewSegmentDownloader(channel string, timestamp time.Time) *SegmentDownloader {
 	dir := fmt.Sprintf("%s_%s", channel, timestamp.Format("2006-01-02_15-04-05"))
 	return &SegmentDownloader{
-		sessionDir:  dir,
-		seen:        make(map[string]bool),
-		segments:    make([]string, 0),
-		rateLimiter: ratelimit.NewLimiter(30, 100*time.Millisecond),
-	}
-}
-
-func (sd *SegmentDownloader) SetRateLimit(maxTokens int, refillRate time.Duration) {
-	if sd.rateLimiter != nil {
-		sd.rateLimiter.SetMaxTokens(maxTokens)
-		sd.rateLimiter.SetRefillRate(refillRate)
+		sessionDir: dir,
+		seen:       make(map[string]bool),
+		segments:   make([]string, 0),
 	}
 }
 
@@ -64,8 +54,6 @@ func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string) er
 			return ctx.Err()
 		default:
 		}
-
-		sd.rateLimiter.Wait()
 
 		resp, err := http.Get(url)
 		if err != nil {

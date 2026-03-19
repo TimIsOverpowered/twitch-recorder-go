@@ -35,7 +35,7 @@ func NewClient(clientID, clientSecret, oauthKey string, httpClient *resty.Client
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		oauthKey:     oauthKey,
-		rateLimiter:  ratelimit.NewLimiter(10, 1*time.Second),
+		rateLimiter:  ratelimit.NewLimiter(150, 400*time.Millisecond),
 	}
 }
 
