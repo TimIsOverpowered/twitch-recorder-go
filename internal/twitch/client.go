@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
+	"twitch-recorder-go/internal/metrics"
 	"twitch-recorder-go/internal/ratelimit"
 )
 
@@ -27,6 +28,7 @@ type Client struct {
 	mu                sync.RWMutex
 	isRefreshingToken bool
 	rateLimiter       *ratelimit.Limiter
+	metrics           *metrics.Metrics
 }
 
 func NewClient(clientID, clientSecret, oauthKey string, httpClient *resty.Client) *Client {
@@ -46,8 +48,15 @@ func (c *Client) SetRateLimit(maxTokens int, refillRate time.Duration) {
 	}
 }
 
+func (c *Client) SetMetrics(m *metrics.Metrics) {
+	c.metrics = m
+}
+
 func (c *Client) GetUser(ctx context.Context, login string) (*User, error) {
 	if err := c.ensureAccessToken(ctx); err != nil {
+		if c.metrics != nil {
+			c.metrics.RecordAPICall(false, 0)
+		}
 		return nil, err
 	}
 
@@ -67,11 +76,21 @@ func (c *Client) GetUser(ctx context.Context, login string) (*User, error) {
 		Get(TwitchAPIBase + "/users")
 
 	if err != nil {
+		if c.metrics != nil {
+			c.metrics.RecordAPICall(false, 0)
+		}
 		return nil, err
 	}
 
 	if resp.IsError() {
+		if c.metrics != nil {
+			c.metrics.RecordAPICall(false, 0)
+		}
 		return nil, &APIError{StatusCode: resp.StatusCode(), Body: string(resp.Body())}
+	}
+
+	if c.metrics != nil {
+		c.metrics.RecordAPICall(true, 1)
 	}
 
 	if len(response.Data) == 0 {
@@ -83,6 +102,9 @@ func (c *Client) GetUser(ctx context.Context, login string) (*User, error) {
 
 func (c *Client) GetStreams(ctx context.Context, userLogin string) (*Streams, error) {
 	if err := c.ensureAccessToken(ctx); err != nil {
+		if c.metrics != nil {
+			c.metrics.RecordAPICall(false, 0)
+		}
 		return nil, err
 	}
 
@@ -100,11 +122,21 @@ func (c *Client) GetStreams(ctx context.Context, userLogin string) (*Streams, er
 		Get(TwitchAPIBase + "/streams")
 
 	if err != nil {
+		if c.metrics != nil {
+			c.metrics.RecordAPICall(false, 0)
+		}
 		return nil, err
 	}
 
 	if resp.IsError() {
+		if c.metrics != nil {
+			c.metrics.RecordAPICall(false, 0)
+		}
 		return nil, &APIError{StatusCode: resp.StatusCode(), Body: string(resp.Body())}
+	}
+
+	if c.metrics != nil {
+		c.metrics.RecordAPICall(true, 1)
 	}
 
 	return &response, nil
@@ -136,11 +168,21 @@ func (c *Client) RefreshToken(ctx context.Context) error {
 		Post(TwitchIDAPI + "/oauth2/token")
 
 	if err != nil {
+		if c.metrics != nil {
+			c.metrics.RecordAPICall(false, 0)
+		}
 		return err
 	}
 
 	if resp.IsError() {
+		if c.metrics != nil {
+			c.metrics.RecordAPICall(false, 0)
+		}
 		return &APIError{StatusCode: resp.StatusCode(), Body: string(resp.Body())}
+	}
+
+	if c.metrics != nil {
+		c.metrics.RecordAPICall(true, 1)
 	}
 
 	c.accessToken = response.AccessToken

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"twitch-recorder-go/internal/log"
+	"twitch-recorder-go/internal/metrics"
 	"twitch-recorder-go/internal/sanitize"
 )
 
@@ -21,6 +22,7 @@ type SegmentDownloader struct {
 	mu         sync.Mutex
 	downloaded int
 	totalSize  int64
+	metrics    *metrics.Metrics
 }
 
 func NewSegmentDownloader(channel string, timestamp time.Time) *SegmentDownloader {
@@ -49,6 +51,7 @@ func (sd *SegmentDownloader) AddSegment(url string) bool {
 func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string) error {
 	maxRetries := 5
 	var lastErr error
+	startTime := time.Now()
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		select {
@@ -101,10 +104,18 @@ func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string) er
 		sd.totalSize += written
 		sd.mu.Unlock()
 
+		duration := time.Since(startTime)
+		if sd.metrics != nil {
+			sd.metrics.RecordSegmentDownload(written, duration)
+		}
+
 		log.Debug("Downloaded segment %d/%d (%.2f MB)", sd.downloaded, len(sd.segments), float64(sd.totalSize)/1024/1024)
 		return nil
 	}
 
+	if sd.metrics != nil {
+		sd.metrics.RecordSegmentFailure(lastErr.Error())
+	}
 	return lastErr
 }
 
@@ -140,6 +151,10 @@ func (sd *SegmentDownloader) GetDownloadedCount() int {
 	sd.mu.Lock()
 	defer sd.mu.Unlock()
 	return sd.downloaded
+}
+
+func (sd *SegmentDownloader) SetMetrics(m *metrics.Metrics) {
+	sd.metrics = m
 }
 
 func (sd *SegmentDownloader) CleanupOnError() {

@@ -13,6 +13,7 @@ import (
 	"github.com/go-resty/resty/v2"
 	"twitch-recorder-go/internal/config"
 	"twitch-recorder-go/internal/log"
+	"twitch-recorder-go/internal/metrics"
 	"twitch-recorder-go/internal/recorder"
 	"twitch-recorder-go/internal/segment"
 	"twitch-recorder-go/internal/twitch"
@@ -67,7 +68,10 @@ func main() {
 
 	segment.RecoverIncompleteSessions(c.VodDirectory, c.Channels)
 
+	m := metrics.NewMetrics()
+
 	twitchClient := createTwitchClient(c)
+	twitchClient.SetMetrics(m)
 
 	var wg sync.WaitGroup
 	for _, channel := range c.Channels {
@@ -86,6 +90,7 @@ func main() {
 		go func(ch string) {
 			defer wg.Done()
 			rec := recorder.NewRecorder(twitchClient, ch)
+			rec.SetMetrics(m)
 			rec.MonitorChannel(ctx)
 		}(channel)
 	}
@@ -96,6 +101,7 @@ func main() {
 	}()
 
 	<-ctx.Done()
+	printMetrics(m)
 	log.Info("Shutting down gracefully...")
 }
 
@@ -138,6 +144,41 @@ func overrideWithEnv(cfgVal, envVal string) string {
 		return envVal
 	}
 	return cfgVal
+}
+
+func printMetrics(m *metrics.Metrics) {
+	stats := m.GetStats()
+	log.Info("========================================")
+	log.Info("METRICS SUMMARY")
+	log.Info("========================================")
+	log.Info("Uptime: %v", stats.Uptime)
+	log.Info("")
+	log.Info("DOWNLOAD STATS:")
+	log.Info("  Segments Downloaded: %d", stats.SegmentsDownloaded)
+	log.Info("  Segments Failed: %d", stats.SegmentsFailed)
+	log.Info("  Bytes Downloaded: %.2f MB", float64(stats.BytesDownloaded)/1024/1024)
+	log.Info("  Success Rate: %.1f%%", stats.DownloadSuccessRate)
+	log.Info("  Avg Download Duration: %v", stats.AvgDownloadDuration)
+	log.Info("")
+	log.Info("API STATS:")
+	log.Info("  Total API Calls: %d", stats.APICallsTotal)
+	log.Info("  Failed API Calls: %d", stats.APICallsFailed)
+	log.Info("  API Quota Used: %d", stats.APIQuotaUsed)
+	if !stats.LastAPICallTime.IsZero() {
+		log.Info("  Last API Call: %v ago", time.Since(stats.LastAPICallTime))
+	}
+	log.Info("")
+	log.Info("RECORDING STATS:")
+	log.Info("  Recordings Started: %d", stats.RecordingsStarted)
+	log.Info("  Recordings Completed: %d", stats.RecordingsCompleted)
+	log.Info("  Recordings Failed: %d", stats.RecordingsFailed)
+	log.Info("  Total Recording Duration: %v", stats.TotalRecordingDuration)
+	log.Info("")
+	log.Info("STREAM MONITORING:")
+	log.Info("  Streams Checked: %d", stats.StreamsChecked)
+	log.Info("  Streams Online: %d", stats.StreamsOnline)
+	log.Info("  Streams Offline: %d", stats.StreamsOffline)
+	log.Info("========================================")
 }
 
 func generateDefaultConfig(configPath string) error {

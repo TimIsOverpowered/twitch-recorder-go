@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"twitch-recorder-go/internal/log"
+	"twitch-recorder-go/internal/metrics"
 	"twitch-recorder-go/internal/segment"
 	"twitch-recorder-go/internal/twitch"
 )
@@ -13,6 +14,7 @@ import (
 type Recorder struct {
 	twitchClient *twitch.Client
 	channel      string
+	metrics      *metrics.Metrics
 }
 
 func NewRecorder(twitchClient *twitch.Client, channel string) *Recorder {
@@ -20,6 +22,10 @@ func NewRecorder(twitchClient *twitch.Client, channel string) *Recorder {
 		twitchClient: twitchClient,
 		channel:      channel,
 	}
+}
+
+func (r *Recorder) SetMetrics(m *metrics.Metrics) {
+	r.metrics = m
 }
 
 func (r *Recorder) MonitorChannel(ctx context.Context) error {
@@ -45,7 +51,14 @@ func (r *Recorder) checkAndRecord(ctx context.Context) error {
 	}
 
 	if len(streams.Data) == 0 {
+		if r.metrics != nil {
+			r.metrics.RecordStreamCheck(false)
+		}
 		return nil
+	}
+
+	if r.metrics != nil {
+		r.metrics.RecordStreamCheck(true)
 	}
 
 	log.Info("%s is LIVE! Starting recording...", r.channel)
@@ -53,9 +66,14 @@ func (r *Recorder) checkAndRecord(ctx context.Context) error {
 }
 
 func (r *Recorder) recordStream(ctx context.Context, streamID string) error {
+	startTime := time.Now()
 	timestamp := time.Now()
 	downloader := segment.NewSegmentDownloader(r.channel, timestamp)
 	parser := segment.NewPlaylistParser(downloader)
+
+	if r.metrics != nil {
+		r.metrics.RecordRecordingStart()
+	}
 
 	sessionDir := downloader.GetSessionDir()
 	log.Info("Recording session: %s", sessionDir)
@@ -64,6 +82,10 @@ func (r *Recorder) recordStream(ctx context.Context, streamID string) error {
 		select {
 		case <-ctx.Done():
 			log.Info("Context cancelled, finalizing recording...")
+			duration := time.Since(startTime)
+			if r.metrics != nil {
+				r.metrics.RecordRecordingComplete(duration)
+			}
 			return r.finalizeRecording(downloader, sessionDir)
 		default:
 		}
@@ -77,6 +99,10 @@ func (r *Recorder) recordStream(ctx context.Context, streamID string) error {
 
 		if !parser.IsLive() {
 			log.Info("Stream ended, finalizing recording...")
+			duration := time.Since(startTime)
+			if r.metrics != nil {
+				r.metrics.RecordRecordingComplete(duration)
+			}
 			return r.finalizeRecording(downloader, sessionDir)
 		}
 
@@ -87,6 +113,9 @@ func (r *Recorder) recordStream(ctx context.Context, streamID string) error {
 func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sessionDir string) error {
 	outputFile := fmt.Sprintf("%s/%s.mp4", twitch.TwitchUsherM3U8, r.channel)
 	if err := downloader.Finalize(outputFile); err != nil {
+		if r.metrics != nil {
+			r.metrics.RecordRecordingFailure()
+		}
 		return fmt.Errorf("failed to finalize recording: %w", err)
 	}
 
