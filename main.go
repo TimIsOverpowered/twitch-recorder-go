@@ -64,6 +64,7 @@ type Config struct {
 var config *Config
 var upload_to_drive bool
 var cfgPath string
+var tokenMu sync.Mutex
 var isRefreshingTwitchToken bool
 
 type TwitchToken struct {
@@ -102,6 +103,13 @@ func NewConfig(configPath string) (*Config, error) {
 
 	d, err := ioutil.ReadFile(configPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			if err := generateDefaultConfig(configPath); err != nil {
+				log.Fatalf("Failed to generate default config: %v", err)
+			}
+			log.Printf("Please configure your %s file and run again", configPath)
+			os.Exit(0)
+		}
 		log.Fatalf("unable to read config %v", err)
 	}
 	if err := json.Unmarshal(d, &config); err != nil {
@@ -109,6 +117,100 @@ func NewConfig(configPath string) (*Config, error) {
 	}
 
 	return config, nil
+}
+
+func generateDefaultConfig(configPath string) error {
+	defaultConfig := `{
+ "twitch": {
+  "client_id": "YOUR_TWITCH_CLIENT_ID",
+  "client_secret": "YOUR_TWITCH_CLIENT_SECRET",
+  "oauth_key": ""
+ },
+ "vod_directory": "./recordings",
+ "channels": [
+  "example_channel"
+ ],
+ "twitch_app": {},
+ "drive": {
+  "refresh_token": "",
+  "access_token": ""
+ },
+ "google": {
+  "client_id": "",
+  "client_secret": "",
+  "scopes": [
+   "https://www.googleapis.com/auth/drive",
+   "https://www.googleapis.com/auth/drive.appdata",
+   "https://www.googleapis.com/auth/drive.file",
+   "https://www.googleapis.com/auth/drive.metadata"
+  ],
+  "endpoint": {
+   "token_url": "https://oauth2.googleapis.com/token"
+  }
+ }
+}`
+
+	setupInstructions := `
+
+================================================================================
+CONFIGURATION GUIDE - Twitch Recorder Go v2.0.0
+================================================================================
+
+STEP 1: Get Twitch API Credentials
+-----------------------------------
+1. Visit https://dev.twitch.tv/console
+2. Create a new application (name it anything, e.g., "Twitch Recorder")
+3. Set OAuth Redirect URL to: http://localhost:8080/callback
+4. Copy your Client ID and Client Secret
+5. Replace "YOUR_TWITCH_CLIENT_ID" and "YOUR_TWITCH_CLIENT_SECRET" in config.json
+
+STEP 2: Get Twitch OAuth Key (Optional - Recommended for Turbo users)
+----------------------------------------------------------------------
+The OAuth key bypasses ads if you have Twitch Turbo and enables higher qualities.
+
+To get your Twitch auth token:
+1. Log in to https://twitch.tv in your browser
+2. Open Developer Console (F12 or Ctrl+Shift+I / Cmd+Option+I on Mac)
+3. Go to Console tab
+4. Paste and run this command:
+   document.cookie.split("; ").find(item=>item.startsWith("auth-token="))?.split("=")[1]
+5. Copy the 30-character result
+6. Add to config.json as "oauth_key" (leave empty if not using)
+
+⚠️ This token grants full account access - keep it secret!
+To revoke: Change password or visit https://www.twitch.tv/settings/security
+
+STEP 3: Configure Recording Directory
+--------------------------------------
+Change "vod_directory": "./recordings" to your preferred path.
+Example (Windows): "vod_directory": "C:\\Users\\YourName\\TwitchRecordings"
+Example (Mac/Linux): "vod_directory": "/home/yourname/twitch-recordings"
+
+STEP 4: Add Channels to Monitor
+--------------------------------
+Replace "example_channel" with the Twitch channel names you want to record.
+You can add multiple channels:
+"channels": ["channel1", "channel2", "channel3"]
+
+STEP 5: Google Drive Upload (Optional)
+---------------------------------------
+To enable automatic uploads to Google Drive:
+1. Visit https://developers.google.com/drive/api/v3/enable-drive-api
+2. Create a new project and enable Drive API
+3. Create OAuth 2.0 credentials
+4. Use https://developers.google.com/oauthplayground/ to get tokens:
+   - Select Drive API v3 scopes (drive, drive.file, drive.metadata)
+   - Authorize and exchange for tokens
+5. Fill in "client_id", "client_secret", "refresh_token", and "access_token"
+6. Run with -drive flag to enable uploads
+
+================================================================================
+After configuring, save this file and run twitch-recorder-go again!
+================================================================================
+`
+
+	fullConfig := defaultConfig + setupInstructions
+	return ioutil.WriteFile(configPath, []byte(fullConfig), 0644)
 }
 
 func ParseFlags() (string, error) {
@@ -226,13 +328,18 @@ func getUserObject(channel string) *User {
 	log.Printf("[%s] Getting user object", channel)
 	client := resty.New()
 
-	resp, _ := client.R().
+	resp, err := client.R().
 		SetHeader("Accept", "application/json").
 		SetAuthToken(config.TwitchToken.AccessToken).
 		SetHeader("Client-ID", config.Twitch.ClientId).
 		Get(TWITCH_API_BASE + "/users?login=" + channel)
 
-	if resp.StatusCode() != 200 {
+	if err != nil {
+		log.Printf("[%s] HTTP request error: %v", channel, err)
+		return &User{}
+	}
+
+	if resp.IsError() || resp.StatusCode() != 200 {
 		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
 		log.Printf(string(resp.Body()))
 	}
@@ -269,22 +376,30 @@ func getVodObject(channel string) (*Vod, error) {
 	}
 
 	user := getUserObject(channel)
+	if len(user.UserData) == 0 {
+		return nil, errors.New("user not found")
+	}
 
 	log.Printf("[%s] Getting vod object", channel)
 	client := resty.New()
 
-	resp, _ := client.R().
+	resp, err := client.R().
 		SetHeader("Accept", "application/json").
 		SetAuthToken(config.TwitchToken.AccessToken).
 		SetHeader("Client-ID", config.Twitch.ClientId).
 		Get(TWITCH_API_BASE + "/videos/?user_id=" + user.UserData[0].User_id)
 
-	if resp.StatusCode() != 200 {
+	if err != nil {
+		log.Printf("[%s] HTTP request error: %v", channel, err)
+		return nil, err
+	}
+
+	if resp.IsError() || resp.StatusCode() != 200 {
 		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
 	}
 
 	var vod Vod
-	err := json.Unmarshal(resp.Body(), &vod)
+	err = json.Unmarshal(resp.Body(), &vod)
 	if err != nil {
 		return nil, err
 	}
@@ -297,13 +412,18 @@ func checkAccessToken() bool {
 
 	client := resty.New()
 
-	resp, _ := client.R().
+	resp, err := client.R().
 		SetHeader("Accept", "application/json").
 		SetAuthToken(config.TwitchToken.AccessToken).
 		SetHeader("Client-ID", config.Twitch.ClientId).
 		Get(TWITCH_ID_API + "/oauth2/validate")
 
-	if resp.StatusCode() != 200 {
+	if err != nil {
+		log.Printf("HTTP request error: %v", err)
+		return true
+	}
+
+	if resp.IsError() || resp.StatusCode() != 200 {
 		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
 		log.Printf("Twitch App Access Token has expired..")
 		return true
@@ -317,11 +437,16 @@ func refreshAccessToken() error {
 
 	client := resty.New()
 
-	resp, _ := client.R().
+	resp, err := client.R().
 		SetHeader("Accept", "application/json").
 		Post(TWITCH_ID_API + "/oauth2/token" + "?client_id=" + config.Twitch.ClientId + "&client_secret=" + config.Twitch.ClientSecret + "&grant_type=client_credentials")
 
-	if resp.StatusCode() != 200 {
+	if err != nil {
+		log.Printf("HTTP request error: %v", err)
+		return err
+	}
+
+	if resp.IsError() || resp.StatusCode() != 200 {
 		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
 		return errors.New(string(resp.Body()))
 	} else {
@@ -338,7 +463,7 @@ func refreshAccessToken() error {
 			return err
 		}
 
-		err = ioutil.WriteFile(cfgPath, d, 0777)
+		err = os.WriteFile(cfgPath, d, 0600)
 		return err
 	}
 }
@@ -357,18 +482,21 @@ type Streams struct {
 }
 
 func refreshTwitchToken(channel string) error {
+	tokenMu.Lock()
+	defer tokenMu.Unlock()
+
 	if isRefreshingTwitchToken {
 		for isRefreshingTwitchToken {
 			log.Printf("[%s] Waiting for Twitch App Access Token", channel)
 			time.Sleep(1 * time.Second)
 		}
 		return nil
-	} else {
-		isRefreshingTwitchToken = true
-		err := refreshAccessToken()
-		isRefreshingTwitchToken = false
-		return err
 	}
+
+	isRefreshingTwitchToken = true
+	defer func() { isRefreshingTwitchToken = false }()
+
+	return refreshAccessToken()
 }
 
 func getStreamObject(channel string) (*Streams, error) {
@@ -386,13 +514,18 @@ func getStreamObject(channel string) (*Streams, error) {
 	log.Printf("[%s] Getting stream object", channel)
 	client := resty.New()
 
-	resp, _ := client.R().
+	resp, err := client.R().
 		SetHeader("Accept", "application/json").
 		SetAuthToken(config.TwitchToken.AccessToken).
 		SetHeader("Client-ID", config.Twitch.ClientId).
 		Get(TWITCH_API_BASE + "/streams/?user_login=" + channel)
 
-	if resp.StatusCode() != 200 {
+	if err != nil {
+		log.Printf("[%s] HTTP request error: %v", channel, err)
+		return nil, err
+	}
+
+	if resp.IsError() || resp.StatusCode() != 200 {
 		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
 		return nil, errors.New("Something went wrong retrieving streams object from twitch")
 	} else {
@@ -427,7 +560,7 @@ func record(m3u8 string, channel string) error {
 		path = config.Vod_directory + "/" + channel + "/"
 	}
 	if !fileExists(path) {
-		os.MkdirAll(path, 0777)
+		os.MkdirAll(path, 0755)
 	}
 	fileName := date + ".mp4"
 
@@ -468,8 +601,8 @@ func record(m3u8 string, channel string) error {
 	}
 
 	new_fileName := stream.StreamsData[0].Id + ".mp4"
-	e := os.Rename(path+fileName, path+new_fileName)
-	if e != nil {
+	err = os.Rename(path+fileName, path+new_fileName)
+	if err != nil {
 		return err
 	}
 
@@ -662,7 +795,7 @@ func getClient(c *oauth2.Config) (*http.Client, error) {
 		if err != nil {
 			return nil, err
 		}
-		err = ioutil.WriteFile(cfgPath, d, 0777)
+		err = os.WriteFile(cfgPath, d, 0600)
 		if err != nil {
 			return nil, err
 		}
@@ -714,7 +847,7 @@ func getLiveTokenSig(channel string) (*TokenSig, error) {
 		}
 	}`, channel))
 
-	resp, _ := client.
+	resp, err := client.
 		SetHeader("Client-ID", TWITCH_CLIENT_ID).
 		SetHeader("Origin", "https://twitch.tv").
 		SetHeader("Referer", "https://twitch.tv").
@@ -723,7 +856,12 @@ func getLiveTokenSig(channel string) (*TokenSig, error) {
 		SetBody(body).
 		Post(TWITCH_GQL_API)
 
-	if resp.StatusCode() != 200 {
+	if err != nil {
+		log.Printf("[%s] HTTP request error: %v", channel, err)
+		return nil, err
+	}
+
+	if resp.IsError() || resp.StatusCode() != 200 {
 		log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
 		return nil, errors.New(string(resp.Body()))
 	}
@@ -744,11 +882,16 @@ func getLiveM3u8(channel string, tokenSig *TokenSig) (string, error) {
 		client.SetHeader("Authorization", "OAuth "+config.Twitch.OAuthKey)
 	}
 
-	resp, _ := client.
+	resp, err := client.
 		SetHeader("Content-Type", "application/vnd.apple.mpegurl").
 		Get(TWITCH_USHER_M3U8 + "/api/channel/hls/" + channel + ".m3u8?allow_source=true&p=" + strconv.Itoa(rand.Intn(10000000-1000000)+1000000) + "&player=mediaplayer&include_unavailable=true&supported_codecs=av1,h265,h264&playlist_include_framerate=true&allow_spectre=true&sig=" + tokenSig.Data.Token.Signature + "&token=" + tokenSig.Data.Token.Value)
 
-	if resp.StatusCode() != 200 {
+	if err != nil {
+		log.Printf("[%s] HTTP request error: %v", channel, err)
+		return "", err
+	}
+
+	if resp.IsError() || resp.StatusCode() != 200 {
 		if resp.StatusCode() != 404 {
 			log.Printf("Unexpected status code, expected %d, got %d instead", 200, resp.StatusCode())
 		}

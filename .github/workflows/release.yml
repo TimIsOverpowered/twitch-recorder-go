@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Run tests
+        run: go test -v ./...
+
+  build:
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows, macos, linux]
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Determine OS name for binary
+        id: os-name
+        run: |
+          if [ "${{ matrix.os }}" == "windows" ]; then
+            echo "os=windows" >> $GITHUB_OUTPUT
+          elif [ "${{ matrix.os }}" == "macos" ]; then
+            echo "os=darwin" >> $GITHUB_OUTPUT
+          else
+            echo "os=linux" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build binary
+        run: |
+          GOOS=${{ steps.os-name.outputs.os }} GOARCH=${{ matrix.arch }} go build -o twitch-recorder-go-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }} .
+
+      - name: Generate SHA256 checksums
+        run: |
+          if [ "${{ matrix.os }}" == "windows" ]; then
+            sha256sum twitch-recorder-go-${{ matrix.os }}-${{ matrix.arch }}.exe > twitch-recorder-go-${{ matrix.os }}-${{ matrix.arch }}.exe.sha256
+          else
+            sha256sum twitch-recorder-go-${{ matrix.os }}-${{ matrix.arch }} > twitch-recorder-go-${{ matrix.os }}-${{ matrix.arch }}.sha256
+          fi
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: twitch-recorder-go-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            twitch-recorder-go-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}
+            twitch-recorder-go-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe.sha256' || '.sha256' }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Combine checksums
+        run: |
+          find . -name "*.sha256" -exec cat {} \; > CHECKSUMS.txt
+
+      - name: Generate release changelog
+        id: changelog
+        run: |
+          echo "Generating changelog from git commits..."
+          CHANGELOG=$(git log --oneline $(git describe --tags --abbrev=0)..HEAD 2>/dev/null || echo "Initial release")
+          echo "$CHANGELOG" > RELEASE_NOTES.md
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          files: |
+            CHECKSUMS.txt
+            RELEASE_NOTES.md
+            twitch-recorder-go-windows-amd64/twitch-recorder-go-windows-amd64.exe
+            twitch-recorder-go-windows-amd64/twitch-recorder-go-windows-amd64.exe.sha256
+            twitch-recorder-go-windows-arm64/twitch-recorder-go-windows-arm64.exe
+            twitch-recorder-go-windows-arm64/twitch-recorder-go-windows-arm64.exe.sha256
+            twitch-recorder-go-macos-amd64/twitch-recorder-go-macos-amd64
+            twitch-recorder-go-macos-amd64/twitch-recorder-go-macos-amd64.sha256
+            twitch-recorder-go-macos-arm64/twitch-recorder-go-macos-arm64
+            twitch-recorder-go-macos-arm64/twitch-recorder-go-macos-arm64.sha256
+            twitch-recorder-go-linux-amd64/twitch-recorder-go-linux-amd64
+            twitch-recorder-go-linux-amd64/twitch-recorder-go-linux-amd64.sha256
+            twitch-recorder-go-linux-arm64/twitch-recorder-go-linux-arm64
+            twitch-recorder-go-linux-arm64/twitch-recorder-go-linux-arm64.sha256
