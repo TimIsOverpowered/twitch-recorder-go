@@ -10,7 +10,7 @@ import (
 	"twitch-recorder-go/internal/log"
 )
 
-func (sd *SegmentDownloader) Finalize(outputFile string) error {
+func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
 	sessionDir := sd.GetSessionDir()
 
 	var segmentFiles []string

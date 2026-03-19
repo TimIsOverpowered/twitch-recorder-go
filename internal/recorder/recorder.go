@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"twitch-recorder-go/internal/api"
@@ -22,6 +23,7 @@ type Recorder struct {
 	metrics       *metrics.Metrics
 	config        *config.Config
 	uploadToDrive bool
+	uploadWG      sync.WaitGroup
 }
 
 func NewRecorder(twitchClient *twitch.Client, channel string, cfg *config.Config, uploadToDrive bool) *Recorder {
@@ -30,6 +32,21 @@ func NewRecorder(twitchClient *twitch.Client, channel string, cfg *config.Config
 		channel:       channel,
 		config:        cfg,
 		uploadToDrive: uploadToDrive,
+	}
+}
+
+func (r *Recorder) WaitForUploads(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		r.uploadWG.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
 	}
 }
 
@@ -167,21 +184,40 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 
 	outputName := folderName
 	outputFile := fmt.Sprintf("%s/%s.mp4", sessionDir, outputName)
-	if err := downloader.Finalize(outputFile); err != nil {
-		if r.metrics != nil {
-			r.metrics.RecordRecordingFailure()
+
+	resultChan, cancel := downloader.FinalizeAsync(outputFile)
+	defer cancel()
+
+	r.uploadWG.Add(1)
+
+	go func() {
+		defer r.uploadWG.Done()
+
+		result := <-resultChan
+
+		if result.Err != nil {
+			log.Error("Failed to finalize recording for %s: %v", r.channel, result.Err)
+			if r.metrics != nil {
+				r.metrics.RecordRecordingFailure()
+			}
+			return
 		}
-		return fmt.Errorf("failed to finalize recording: %w", err)
-	}
 
-	log.Info("Recording saved: %s", outputFile)
+		log.Info("Recording saved: %s", result.OutputFile)
 
-	fileInfo, _ := os.Stat(outputFile)
-	fileSize := fileInfo.Size()
+		duration := time.Since(startTime)
+		if r.metrics != nil {
+			r.metrics.RecordRecordingComplete(duration)
+		}
 
-	if r.uploadToDrive {
-		go func() {
-			err := drive.UploadToDrive(r.config, r.channel, folderName, outputFile)
+		fileInfo, err := os.Stat(result.OutputFile)
+		var fileSize int64 = 0
+		if err == nil {
+			fileSize = fileInfo.Size()
+		}
+
+		if r.uploadToDrive {
+			err := drive.UploadToDrive(r.config, r.channel, folderName, result.OutputFile)
 			success := err == nil
 
 			if r.metrics != nil {
@@ -191,18 +227,15 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 			if err != nil {
 				log.Warn("[%s] Failed to upload to Drive: %v", r.channel, err)
 			}
-		}()
-	}
+		}
 
-	duration := time.Since(startTime)
-	if r.config.Archive.Enabled && r.config.Archive.Endpoint != "" && r.config.Archive.Key != "" {
-		go func() {
-			success := api.PostRecording(r.config.Archive.Endpoint, r.config.Archive.Key, r.channel, streamID, outputFile, duration)
+		if r.config.Archive.Enabled && r.config.Archive.Endpoint != "" && r.config.Archive.Key != "" {
+			success := api.PostRecording(r.config.Archive.Endpoint, r.config.Archive.Key, r.channel, streamID, result.OutputFile, duration)
 			if r.metrics != nil {
 				r.metrics.RecordArchiveAPICall(success)
 			}
-		}()
-	}
+		}
+	}()
 
 	return nil
 }

@@ -25,6 +25,8 @@ var (
 	httpClient        *resty.Client
 	isRefreshingToken bool
 	tokenMu           sync.Mutex
+	recorders         map[string]*recorder.Recorder
+	recordersMu       sync.RWMutex
 )
 
 func init() {
@@ -91,6 +93,14 @@ func main() {
 			defer wg.Done()
 			rec := recorder.NewRecorder(twitchClient, ch, c, uploadToDrive)
 			rec.SetMetrics(m)
+
+			recordersMu.Lock()
+			if recorders == nil {
+				recorders = make(map[string]*recorder.Recorder)
+			}
+			recorders[ch] = rec
+			recordersMu.Unlock()
+
 			rec.MonitorChannel(ctx)
 		}(channel)
 	}
@@ -101,6 +111,13 @@ func main() {
 	}()
 
 	<-ctx.Done()
+
+	recordersMu.RLock()
+	for _, rec := range recorders {
+		rec.WaitForUploads(5 * time.Minute)
+	}
+	recordersMu.RUnlock()
+
 	printMetrics(m)
 	log.Info("Shutting down gracefully...")
 }

@@ -184,3 +184,38 @@ func (sd *SegmentDownloader) CleanupOnError() {
 		log.Error("Failed to cleanup session dir: %v", err)
 	}
 }
+
+type FinalizeResult struct {
+	OutputFile string
+	Err        error
+}
+
+// FinalizeAsync starts finalization in a goroutine and returns a channel for the result
+func (sd *SegmentDownloader) FinalizeAsync(outputFile string) (<-chan FinalizeResult, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	resultChan := make(chan FinalizeResult, 1)
+
+	go func() {
+		defer close(resultChan)
+
+		select {
+		case <-ctx.Done():
+			resultChan <- FinalizeResult{OutputFile: outputFile, Err: ctx.Err()}
+			return
+		default:
+		}
+
+		result := FinalizeResult{OutputFile: outputFile}
+		if err := sd.finalizeInternal(outputFile); err != nil {
+			result.Err = err
+		}
+		resultChan <- result
+	}()
+
+	return resultChan, cancel
+}
+
+// Keep synchronous Finalize for backward compatibility
+func (sd *SegmentDownloader) Finalize(outputFile string) error {
+	return sd.finalizeInternal(outputFile)
+}
