@@ -15,7 +15,7 @@ func TestFinalizeNoSegments(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tempDir)
 
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 	sd.sessionDir = filepath.Join(tempDir, "test_2026-03-19_14-30-00")
 	os.MkdirAll(sd.sessionDir, 0755)
 
@@ -30,7 +30,7 @@ func TestFinalizeCreatesConcatFile(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tempDir)
 
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 	sd.sessionDir = filepath.Join(tempDir, "test_2026-03-19_14-30-00")
 	os.MkdirAll(sd.sessionDir, 0755)
 
@@ -49,7 +49,7 @@ func TestFinalizeWithMultipleSegments(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tempDir)
 
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 	sd.sessionDir = filepath.Join(tempDir, "test_2026-03-19_14-30-00")
 	os.MkdirAll(sd.sessionDir, 0755)
 
@@ -74,7 +74,7 @@ func TestFinalizeSessionDirectoryCleanup(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tempDir)
 
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 	sd.sessionDir = filepath.Join(tempDir, "test_2026-03-19_14-30-00")
 	os.MkdirAll(sd.sessionDir, 0755)
 

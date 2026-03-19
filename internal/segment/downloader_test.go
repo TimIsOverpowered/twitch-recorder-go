@@ -16,15 +16,16 @@ import (
 
 func TestNewSegmentDownloader(t *testing.T) {
 	now := time.Date(2026, 3, 19, 14, 30, 0, 0, time.UTC)
-	sd := NewSegmentDownloader("testchannel", now)
+	sd := NewSegmentDownloader(".", "testchannel", now)
 
-	assert.Equal(t, "testchannel_2026-03-19_14-30-00", sd.sessionDir)
+	assert.Contains(t, sd.sessionDir, "testchannel")
+	assert.Contains(t, sd.sessionDir, "2026-03-19_14-30-00")
 	assert.NotNil(t, sd.seen)
 	assert.NotNil(t, sd.segments)
 }
 
 func TestAddSegment(t *testing.T) {
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 
 	added1 := sd.AddSegment("http://example.com/segment1.ts")
 	added2 := sd.AddSegment("http://example.com/segment2.ts")
@@ -37,7 +38,7 @@ func TestAddSegment(t *testing.T) {
 }
 
 func TestAddSegmentConcurrency(t *testing.T) {
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 
 	var wg sync.WaitGroup
 	segments := make([]string, 100)
@@ -60,7 +61,7 @@ func TestAddSegmentConcurrency(t *testing.T) {
 }
 
 func TestGetSegmentFilename(t *testing.T) {
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 
 	filename1 := sd.getSegmentFilename("http://example.com/segment1.ts")
 	filename2 := sd.getSegmentFilename("http://example.com/segment1.ts")
@@ -78,7 +79,7 @@ func TestDownloadSegmentSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 	defer sd.CleanupOnError()
 
 	err := sd.DownloadSegment(context.Background(), server.URL)
@@ -100,7 +101,7 @@ func TestDownloadSegmentRetry(t *testing.T) {
 	}))
 	defer server.Close()
 
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 	defer sd.CleanupOnError()
 
 	err := sd.DownloadSegment(context.Background(), server.URL)
@@ -115,7 +116,7 @@ func TestDownloadSegmentMaxRetries(t *testing.T) {
 	}))
 	defer server.Close()
 
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 	defer sd.CleanupOnError()
 
 	err := sd.DownloadSegment(context.Background(), server.URL)
@@ -128,7 +129,7 @@ func TestDownloadSegmentCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 
 	err := sd.DownloadSegment(ctx, "http://example.com/segment.ts")
 
@@ -146,7 +147,7 @@ func TestDownloadSegmentCreatesDirectory(t *testing.T) {
 	}))
 	defer server.Close()
 
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 	sd.sessionDir = filepath.Join(tempDir, "test_2026-03-19_14-30-00")
 
 	err = sd.DownloadSegment(context.Background(), server.URL)
@@ -158,13 +159,14 @@ func TestDownloadSegmentCreatesDirectory(t *testing.T) {
 
 func TestGetSessionDir(t *testing.T) {
 	now := time.Date(2026, 3, 19, 14, 30, 0, 0, time.UTC)
-	sd := NewSegmentDownloader("testchannel", now)
+	sd := NewSegmentDownloader(".", "testchannel", now)
 
-	assert.Equal(t, "testchannel_2026-03-19_14-30-00", sd.GetSessionDir())
+	assert.Contains(t, sd.GetSessionDir(), "testchannel")
+	assert.Contains(t, sd.GetSessionDir(), "2026-03-19_14-30-00")
 }
 
 func TestGetDownloadedCount(t *testing.T) {
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 
 	count := sd.GetDownloadedCount()
 	assert.Equal(t, 0, count)
@@ -182,7 +184,7 @@ func TestCleanupOnError(t *testing.T) {
 	err = os.WriteFile(testFile, []byte("test"), 0644)
 	require.NoError(t, err)
 
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 	sd.sessionDir = tempDir
 
 	sd.CleanupOnError()

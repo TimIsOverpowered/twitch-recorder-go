@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewPlaylistParser(t *testing.T) {
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 	parser := NewPlaylistParser(sd)
 
 	assert.NotNil(t, parser)
@@ -20,7 +20,7 @@ func TestNewPlaylistParser(t *testing.T) {
 }
 
 func TestIsLive(t *testing.T) {
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 	parser := NewPlaylistParser(sd)
 
 	assert.True(t, parser.IsLive())
@@ -33,7 +33,7 @@ func TestIsLive(t *testing.T) {
 }
 
 func TestDownloadAllSegmentsCancellation(t *testing.T) {
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 	sd.AddSegment("http://example.com/seg1.ts")
 	sd.AddSegment("http://example.com/seg2.ts")
 
@@ -48,7 +48,7 @@ func TestDownloadAllSegmentsCancellation(t *testing.T) {
 }
 
 func TestDownloadAllSegmentsEmpty(t *testing.T) {
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 	parser := NewPlaylistParser(sd)
 
 	ctx := context.Background()
@@ -58,7 +58,7 @@ func TestDownloadAllSegmentsEmpty(t *testing.T) {
 }
 
 func TestPlaylistParserStructure(t *testing.T) {
-	sd := NewSegmentDownloader("test", time.Now())
+	sd := NewSegmentDownloader(".", "test", time.Now())
 	parser := NewPlaylistParser(sd)
 
 	assert.NotNil(t, parser.downloader)

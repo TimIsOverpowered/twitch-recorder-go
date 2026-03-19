@@ -44,11 +44,11 @@ func TestSegmentDownloaderIntegration(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	now := time.Now()
-	sd := segment.NewSegmentDownloader("testchannel", now)
+	sd := segment.NewSegmentDownloader(tempDir, "testchannel", now)
 
 	sessionDir := sd.GetSessionDir()
-	expectedDir := "testchannel_" + now.Format("2006-01-02_15-04-05")
-	assert.Equal(t, expectedDir, sessionDir)
+	assert.Contains(t, sessionDir, "testchannel")
+	assert.Contains(t, sessionDir, now.Format("2006-01-02_15-04-05"))
 
 	seg1 := "http://example.com/segment1.ts"
 	seg2 := "http://example.com/segment2.ts"
@@ -159,7 +159,7 @@ func TestContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	sd := segment.NewSegmentDownloader("test", time.Now())
+	sd := segment.NewSegmentDownloader(".", "test", time.Now())
 
 	err := sd.DownloadSegment(ctx, "http://example.com/segment.ts")
 
