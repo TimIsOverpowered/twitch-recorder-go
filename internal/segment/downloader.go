@@ -25,6 +25,8 @@ type SegmentDownloader struct {
 	metrics     *metrics.Metrics
 	format      string // "ts" or "mp4"
 	initSegment string
+	fileCounter int
+	counterMu   sync.Mutex
 }
 
 func NewSegmentDownloader(vodDirectory, channel string, timestamp time.Time) *SegmentDownloader {
@@ -116,7 +118,7 @@ func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string) er
 			continue
 		}
 
-		filename := sd.getSegmentFilename(url)
+		filename := sd.getSegmentFilename()
 		path := filepath.Join(sd.sessionDir, filename)
 
 		dir := filepath.Dir(path)
@@ -169,23 +171,17 @@ func (sd *SegmentDownloader) sleepWithBackoff(attempt int) {
 	time.Sleep(backoff)
 }
 
-func (sd *SegmentDownloader) getSegmentFilename(url string) string {
-	hash := 0
-	for _, c := range url {
-		hash = hash*31 + int(c)
-	}
+func (sd *SegmentDownloader) getSegmentFilename() string {
+	sd.counterMu.Lock()
+	sd.fileCounter++
+	counter := sd.fileCounter
+	sd.counterMu.Unlock()
+
 	ext := ".ts"
 	if sd.format == "mp4" {
 		ext = ".mp4"
 	}
-	return fmt.Sprintf("%05d%s", abs(hash)%100000, ext)
-}
-
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
+	return fmt.Sprintf("%05d%s", counter, ext)
 }
 
 func (sd *SegmentDownloader) GetSessionDir() string {

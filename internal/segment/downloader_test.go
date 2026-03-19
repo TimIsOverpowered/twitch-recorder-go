@@ -63,13 +63,13 @@ func TestAddSegmentConcurrency(t *testing.T) {
 func TestGetSegmentFilename(t *testing.T) {
 	sd := NewSegmentDownloader(".", "test", time.Now())
 
-	filename1 := sd.getSegmentFilename("http://example.com/segment1.ts")
-	filename2 := sd.getSegmentFilename("http://example.com/segment1.ts")
-	filename3 := sd.getSegmentFilename("http://example.com/segment2.ts")
+	filename1 := sd.getSegmentFilename()
+	filename2 := sd.getSegmentFilename()
+	filename3 := sd.getSegmentFilename()
 
-	assert.Equal(t, filename1, filename2)
-	assert.NotEqual(t, filename1, filename3)
-	assert.Contains(t, filename1, ".ts")
+	assert.Equal(t, "00001.ts", filename1)
+	assert.Equal(t, "00002.ts", filename2)
+	assert.Equal(t, "00003.ts", filename3)
 }
 
 func TestDownloadSegmentSuccess(t *testing.T) {
@@ -191,22 +191,4 @@ func TestCleanupOnError(t *testing.T) {
 
 	_, err = os.Stat(tempDir)
 	assert.True(t, os.IsNotExist(err))
-}
-
-func TestAbs(t *testing.T) {
-	tests := []struct {
-		input    int
-		expected int
-	}{
-		{-5, 5},
-		{0, 0},
-		{10, 10},
-	}
-
-	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
-			result := abs(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
 }
