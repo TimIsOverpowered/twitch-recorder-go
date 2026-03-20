@@ -25,7 +25,7 @@ const (
 	StreamCheckTimeout  = 30 * time.Second
 	FinalizeTimeout     = 5 * time.Minute
 	MaxStreamFailures   = 3
-	RetryDelay          = 5 * time.Second
+	RetryDelay          = 2 * time.Second
 	DownloadConcurrency = 4
 )
 
@@ -312,13 +312,19 @@ func (r *Recorder) findOrCreateSession() (*segment.SegmentDownloader, string, st
 			}
 
 			streamID = metadata.StreamID
-			if metadata.LastSeq > 0 {
+
+			diskLastSeq := downloader.GetLastDownloadedSeq()
+			if metadata.LastSeq > diskLastSeq {
 				parser.SetLastSeq(metadata.LastSeq)
+				log.InfofC(r.channel, "Using metadata lastSeq=%d", metadata.LastSeq)
+			} else {
+				parser.SetLastSeq(diskLastSeq)
+				log.InfofC(r.channel, "Using disk scan lastSeq=%d (metadata had %d)", diskLastSeq, metadata.LastSeq)
 			}
+
 			if metadata.Format != "" {
 				downloader.SetFormat(metadata.Format)
 			}
-			log.InfofC(r.channel, "Resuming session (stream_id: %s, lastSeq: %d)", streamID, metadata.LastSeq)
 		}
 
 		return downloader, sessionDir, streamID, parser, nil

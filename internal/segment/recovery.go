@@ -16,14 +16,25 @@ func isIncompleteSession(sessionDir string) bool {
 	}
 
 	tsFiles, _ := filepath.Glob(filepath.Join(sessionDir, "*.ts"))
+	mp4Files, _ := filepath.Glob(filepath.Join(sessionDir, "*.mp4"))
 
-	if len(tsFiles) == 0 {
+	mp4SegmentCount := 0
+	for _, f := range mp4Files {
+		if filepath.Base(f) != "init.mp4" {
+			mp4SegmentCount++
+		}
+	}
+
+	allSegments := len(tsFiles) + mp4SegmentCount
+	if allSegments == 0 {
 		return false
 	}
 
-	mp4Files, _ := filepath.Glob(filepath.Join(sessionDir, "*.mp4"))
 	for _, f := range mp4Files {
 		baseName := strings.TrimSuffix(filepath.Base(f), ".mp4")
+		if baseName == "init" {
+			continue
+		}
 		if _, err := fmt.Sscanf(baseName, "%d", new(int)); err != nil {
 			return false
 		}
