@@ -73,4 +73,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           draft: true
-          body_path: RELEASE_NOTES
+          body_path: RELEASE_NOTES.md
+          files: |
+            CHECKSUMS.txt
+            **/twitch-recorder-go-*
