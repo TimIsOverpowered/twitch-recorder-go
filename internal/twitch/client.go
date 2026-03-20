@@ -310,6 +310,7 @@ func (c *Client) GetCachedToken(ctx context.Context, channel string) (*CachedTok
 	c.tokenCacheMu.RUnlock()
 
 	if ok && time.Now().Before(cached.ExpiresAt) {
+		log.Debugf("Token expires in: %v", time.Until(cached.ExpiresAt))
 		return cached, nil
 	}
 
@@ -320,10 +321,9 @@ func (c *Client) GetCachedToken(ctx context.Context, channel string) (*CachedTok
 	}
 
 	expiresAt, err := extractTokenExpiration(tokenSig.Data.StreamPlaybackAccessToken.Value)
-	fmt.Println(expiresAt)
 	if err != nil {
-		log.Warnf("Failed to parse token expiration, using default 4min: %v", err)
-		expiresAt = time.Now().Add(4 * time.Minute)
+		log.Warnf("Failed to parse token expiration, using default 10min: %v", err)
+		expiresAt = time.Now().Add(10 * time.Minute)
 	}
 
 	cachedToken := &CachedToken{
