@@ -53,9 +53,9 @@ func TestSegmentDownloaderIntegration(t *testing.T) {
 	seg1 := "http://example.com/segment1.ts"
 	seg2 := "http://example.com/segment2.ts"
 
-	added1 := sd.AddSegment(seg1)
-	added2 := sd.AddSegment(seg2)
-	added3 := sd.AddSegment(seg1)
+	added1 := sd.AddSegment(seg1, 1)
+	added2 := sd.AddSegment(seg2, 2)
+	added3 := sd.AddSegment(seg1, 1)
 
 	assert.True(t, added1)
 	assert.True(t, added2)

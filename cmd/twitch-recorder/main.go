@@ -57,10 +57,6 @@ func main() {
 	flag.IntVar(&testFinalizeAfter, "test-finalize-after", 0, "[TESTING] Force finalization after N seconds (default: 10)")
 	flag.Parse()
 
-	if testFinalizeAfter == 0 && flag.Lookup("test-finalize-after").Value.String() != "0" {
-		testFinalizeAfter = 10
-	}
-
 	log.Init(logLevel)
 
 	log.Info("Twitch Recorder starting...")
@@ -71,7 +67,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if testFinalizeAfter > 0 || flag.Lookup("test-finalize-after").Value.String() != "0" {
+	if testFinalizeAfter > 0 {
 		c.TestFinalizeAfter = testFinalizeAfter
 	}
 

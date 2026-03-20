@@ -123,7 +123,7 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 				continue
 			}
 
-			if !pp.downloader.AddSegment(segment.URI) {
+			if !pp.downloader.AddSegment(segment.URI, segmentSeq) {
 				continue
 			}
 

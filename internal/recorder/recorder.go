@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -182,10 +184,34 @@ func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 				initSegmentDownloaded = true
 			} else {
 				log.InfoC(r.channel, "Downloading init segment...")
-				if err := downloader.DownloadSegment(ctx, initURI, 1); err != nil {
+
+				sessionDir := downloader.GetSessionDir()
+				if err := os.MkdirAll(sessionDir, 0755); err != nil {
+					log.ErrorfC(r.channel, "Failed to create session directory: %v", err)
+				}
+
+				initPath := filepath.Join(sessionDir, "init.mp4")
+
+				resp, err := http.Get(initURI)
+				if err != nil {
 					log.ErrorfC(r.channel, "Failed to download init segment: %v", err)
 				} else {
-					initSegmentDownloaded = true
+					out, err := os.Create(initPath)
+					if err != nil {
+						resp.Body.Close()
+						log.ErrorfC(r.channel, "Failed to create init file: %v", err)
+					} else {
+						_, err = io.Copy(out, resp.Body)
+						out.Close()
+						resp.Body.Close()
+						if err != nil {
+							log.ErrorfC(r.channel, "Failed to write init segment: %v", err)
+						} else {
+							downloader.SetInitSegment("init.mp4")
+							initSegmentDownloaded = true
+							log.DebugfC(r.channel, "Downloaded init segment to init.mp4")
+						}
+					}
 				}
 			}
 		}

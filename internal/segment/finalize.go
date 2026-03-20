@@ -6,12 +6,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 
 	"twitch-recorder-go/internal/log"
 )
 
 func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
 	sessionDir := sd.GetSessionDir()
+	channelDir := sd.GetChannelDir()
 
 	var segmentFiles []string
 	var err error
@@ -30,7 +33,38 @@ func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
 		return fmt.Errorf("no segment files found in session directory")
 	}
 
-	sort.Strings(segmentFiles)
+	sort.Slice(segmentFiles, func(i, j int) bool {
+		nameI := filepath.Base(segmentFiles[i])
+		nameJ := filepath.Base(segmentFiles[j])
+		numI := strings.TrimSuffix(nameI, filepath.Ext(nameI))
+		numJ := strings.TrimSuffix(nameJ, filepath.Ext(nameJ))
+		idxI, _ := strconv.Atoi(numI)
+		idxJ, _ := strconv.Atoi(numJ)
+		return idxI < idxJ
+	})
+
+	var filteredSegments []string
+	for _, segFile := range segmentFiles {
+		if filepath.Base(segFile) != "init.mp4" {
+			filteredSegments = append(filteredSegments, segFile)
+		}
+	}
+	segmentFiles = filteredSegments
+
+	if sd.format == "mp4" && sd.initSegment != "" {
+		log.InfofC(sd.channel, "Prepending init segment to %d media segments", len(segmentFiles))
+
+		initPath := filepath.Join(sessionDir, sd.initSegment)
+		initSavePath := filepath.Join(sessionDir, "init.mp4")
+
+		if err := os.Rename(initPath, initSavePath); err != nil {
+			log.WarnfC(sd.channel, "Failed to rename init segment: %v", err)
+		} else {
+			log.DebugfC(sd.channel, "Saved init segment as init.mp4")
+			initFile := filepath.Join(sessionDir, "init.mp4")
+			segmentFiles = append([]string{initFile}, segmentFiles...)
+		}
+	}
 
 	concatFile := filepath.Join(sessionDir, "segments.txt")
 	f, err := os.Create(concatFile)
@@ -48,13 +82,14 @@ func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
 	}
 	f.Close()
 
-	log.Infof("Finalizing %d segments into %s", len(segmentFiles), outputFile)
+	log.InfofC(sd.channel, "Finalizing %d segments into %s", len(segmentFiles), outputFile)
 
 	var cmd *exec.Cmd
 	if sd.format == "mp4" {
-		cmd = exec.Command("ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", outputFile)
+		concatArg := "concat:" + strings.Join(segmentFiles, "|")
+		cmd = exec.Command("ffmpeg", "-y", "-i", concatArg, "-c", "copy", "-avoid_negative_ts", "make_zero", "-fflags", "+genpts", "-movflags", "+faststart", outputFile)
 	} else {
-		cmd = exec.Command("ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", "-movflags", "+faststart", outputFile)
+		cmd = exec.Command("ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", "-output_ts_offset", "0", "-movflags", "+faststart", outputFile)
 	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -63,22 +98,35 @@ func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
 		return fmt.Errorf("ffmpeg failed: %w", err)
 	}
 
-	log.Infof("Successfully created %s", outputFile)
+	log.InfofC(sd.channel, "Successfully created %s", outputFile)
 
 	os.Remove(concatFile)
 
 	for _, segFile := range segmentFiles {
 		if err := os.Remove(segFile); err != nil {
-			log.Warnf("Failed to remove %s: %v", segFile, err)
+			log.WarnfC(sd.channel, "Failed to remove %s: %v", segFile, err)
 		}
 	}
 
 	if err := sd.DeleteSessionMetadata(); err != nil {
-		log.Warnf("Failed to delete session metadata: %v", err)
+		log.WarnfC(sd.channel, "Failed to delete session metadata: %v", err)
 	}
 
-	if err := os.Remove(sessionDir); err != nil {
-		log.Warnf("Failed to remove session directory: %v", err)
+	sessionDirName := filepath.Base(sessionDir)
+	sessionDirParent := filepath.Dir(sessionDir)
+	folderName := strings.TrimSuffix(filepath.Base(outputFile), ".mp4")
+	renameTarget := filepath.Join(sessionDirParent, folderName)
+
+	if err := os.Rename(sessionDir, renameTarget); err != nil {
+		log.WarnfC(sd.channel, "Failed to rename session directory %s to %s: %v", sessionDirName, folderName, err)
+	} else {
+		log.InfofC(sd.channel, "Renamed session directory from %s to %s", sessionDirName, folderName)
+	}
+
+	if _, err := os.Stat(sessionDirParent); os.IsNotExist(err) {
+		if err := os.Remove(channelDir); err != nil && !os.IsNotExist(err) {
+			log.WarnfC(sd.channel, "Failed to remove empty channel directory: %v", err)
+		}
 	}
 
 	return nil

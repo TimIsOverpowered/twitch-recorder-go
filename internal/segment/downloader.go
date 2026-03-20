@@ -32,11 +32,16 @@ const (
 	MetadataFileName = "current_session.json"
 )
 
+type SegmentInfo struct {
+	URL    string
+	SeqNum int
+}
+
 type SegmentDownloader struct {
 	sessionDir  string
 	channel     string
 	seen        map[string]bool
-	segments    []string
+	segments    []SegmentInfo
 	mu          sync.Mutex
 	downloaded  int
 	totalSize   int64
@@ -45,7 +50,6 @@ type SegmentDownloader struct {
 	initSegment string
 	fileCounter int
 	counterMu   sync.Mutex
-	totalAdded  int
 }
 
 func NewSegmentDownloader(vodDirectory, channel string, timestamp time.Time) *SegmentDownloader {
@@ -61,7 +65,7 @@ func NewSegmentDownloader(vodDirectory, channel string, timestamp time.Time) *Se
 		sessionDir: sessionDir,
 		channel:    channel,
 		seen:       make(map[string]bool),
-		segments:   make([]string, 0),
+		segments:   make([]SegmentInfo, 0),
 	}
 }
 
@@ -69,7 +73,7 @@ func NewSegmentDownloaderFromSession(sessionDir string) *SegmentDownloader {
 	sd := &SegmentDownloader{
 		sessionDir: sessionDir,
 		seen:       make(map[string]bool),
-		segments:   make([]string, 0),
+		segments:   make([]SegmentInfo, 0),
 	}
 
 	metadata, err := sd.LoadSessionMetadata()
@@ -95,7 +99,7 @@ func NewSegmentDownloaderFromSession(sessionDir string) *SegmentDownloader {
 	return sd
 }
 
-func (sd *SegmentDownloader) AddSegment(url string) bool {
+func (sd *SegmentDownloader) AddSegment(url string, seqNum int) bool {
 	sd.mu.Lock()
 	defer sd.mu.Unlock()
 
@@ -104,25 +108,30 @@ func (sd *SegmentDownloader) AddSegment(url string) bool {
 	}
 
 	sd.seen[url] = true
-	sd.segments = append(sd.segments, url)
-	sd.totalAdded++
+	sd.segments = append(sd.segments, SegmentInfo{URL: url, SeqNum: seqNum})
 	return true
 }
 
 func (sd *SegmentDownloader) DownloadQueuedSegments(ctx context.Context, concurrency int) {
 	sd.mu.Lock()
-	segments := make([]string, len(sd.segments))
+	segments := make([]SegmentInfo, len(sd.segments))
 	copy(segments, sd.segments)
-	sd.segments = make([]string, 0)
+	sd.segments = make([]SegmentInfo, 0)
 	batchSize := len(segments)
 	sd.mu.Unlock()
+
+	if batchSize == 0 {
+		return
+	}
+
+	log.DebugfC(sd.channel, "Downloading %d segments concurrently", batchSize)
 
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, concurrency)
 	batchDownloaded := 0
 	batchMu := sync.Mutex{}
 
-	for _, url := range segments {
+	for _, seg := range segments {
 		select {
 		case <-ctx.Done():
 			return
@@ -132,18 +141,18 @@ func (sd *SegmentDownloader) DownloadQueuedSegments(ctx context.Context, concurr
 		wg.Add(1)
 		semaphore <- struct{}{}
 
-		go func(segmentURL string) {
+		go func(segmentInfo SegmentInfo) {
 			defer wg.Done()
 			defer func() { <-semaphore }()
 
-			if err := sd.DownloadSegment(ctx, segmentURL, batchSize); err != nil {
-				log.Errorf("Failed to download segment: %v", err)
+			if err := sd.DownloadSegmentWithSeq(ctx, segmentInfo.URL, segmentInfo.SeqNum, batchSize); err != nil {
+				log.ErrorfC(sd.channel, "Failed to download segment seq=%d: %v", segmentInfo.SeqNum, err)
 			} else {
 				batchMu.Lock()
 				batchDownloaded++
 				batchMu.Unlock()
 			}
-		}(url)
+		}(seg)
 	}
 
 	wg.Wait()
@@ -152,16 +161,22 @@ func (sd *SegmentDownloader) DownloadQueuedSegments(ctx context.Context, concurr
 	}
 }
 
+func (sd *SegmentDownloader) DownloadSegmentWithSeq(ctx context.Context, url string, seqNum int, batchSize int) error {
+	return sd.downloadSegmentInternal(ctx, url, seqNum, batchSize)
+}
+
 func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string, batchSize int) error {
+	return sd.downloadSegmentInternal(ctx, url, -1, batchSize)
+}
+
+func (sd *SegmentDownloader) downloadSegmentInternal(ctx context.Context, url string, seqNum int, batchSize int) error {
 	maxRetries := 5
 	var lastErr error
 	startTime := time.Now()
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 
 		resp, err := http.Get(url)
@@ -174,12 +189,11 @@ func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string, ba
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
 			lastErr = fmt.Errorf("unexpected status code %d (attempt %d/%d)", resp.StatusCode, attempt+1, maxRetries)
-			resp.Body.Close()
 			sd.sleepWithBackoff(attempt)
 			continue
 		}
 
-		filename, fileNum := sd.getSegmentFilenameWithNumber()
+		filename := sd.getSegmentFilename(seqNum)
 		tmpPath := filepath.Join(sd.sessionDir, filename+".tmp")
 		finalPath := filepath.Join(sd.sessionDir, filename)
 
@@ -220,7 +234,7 @@ func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string, ba
 			sd.metrics.RecordSegmentDownload(written, duration)
 		}
 
-		log.DebugfC(sd.channel, "Downloaded segment #%d (%.2f MB)", fileNum, float64(written)/1024/1024)
+		log.DebugfC(sd.channel, "Downloaded segment #%d (%.2f MB)", seqNum, float64(written)/1024/1024)
 		return nil
 	}
 
@@ -252,9 +266,12 @@ func (sd *SegmentDownloader) getSegmentFilenameWithNumber() (string, int) {
 	return fmt.Sprintf("%d%s", counter, ext), counter
 }
 
-func (sd *SegmentDownloader) getSegmentFilename() string {
-	filename, _ := sd.getSegmentFilenameWithNumber()
-	return filename
+func (sd *SegmentDownloader) getSegmentFilename(seqNum int) string {
+	ext := ".ts"
+	if sd.format == "mp4" {
+		ext = ".mp4"
+	}
+	return fmt.Sprintf("%d%s", seqNum, ext)
 }
 
 func (sd *SegmentDownloader) GetSessionDir() string {
@@ -298,6 +315,17 @@ func (sd *SegmentDownloader) GetChannelDir() string {
 }
 
 func (sd *SegmentDownloader) SaveSessionMetadata(streamID, playlistURL string) error {
+	return sd.saveSessionMetadataInternal(streamID, playlistURL, 0, 0)
+}
+
+func (sd *SegmentDownloader) SaveSessionMetadataAfterDownload(streamID, playlistURL string, lastSeq int) error {
+	sd.mu.Lock()
+	fileCounter := sd.fileCounter
+	sd.mu.Unlock()
+	return sd.saveSessionMetadataInternal(streamID, playlistURL, fileCounter, lastSeq)
+}
+
+func (sd *SegmentDownloader) saveSessionMetadataInternal(streamID, playlistURL string, fileCounter, lastSeq int) error {
 	channelDir := sd.GetChannelDir()
 	if err := os.MkdirAll(channelDir, 0755); err != nil {
 		return fmt.Errorf("failed to create channel directory: %w", err)
@@ -311,6 +339,8 @@ func (sd *SegmentDownloader) SaveSessionMetadata(streamID, playlistURL string) e
 		StartTime:   time.Now().Format(time.RFC3339),
 		LastUpdated: time.Now().Format(time.RFC3339),
 		Format:      sd.format,
+		FileCounter: fileCounter,
+		LastSeq:     lastSeq,
 	}
 
 	metadataPath := filepath.Join(channelDir, MetadataFileName)
@@ -368,12 +398,6 @@ func (sd *SegmentDownloader) DetectFormatFromFiles() string {
 		return "mp4"
 	}
 	return "ts"
-}
-
-func (sd *SegmentDownloader) ClearSeenMap() {
-	sd.mu.Lock()
-	defer sd.mu.Unlock()
-	sd.seen = make(map[string]bool)
 }
 
 func (sd *SegmentDownloader) DeleteSessionDir() error {
@@ -439,45 +463,6 @@ func (sd *SegmentDownloader) cleanupTempFiles() error {
 		}
 	}
 
-	return nil
-}
-
-func (sd *SegmentDownloader) SaveSessionMetadataAfterDownload(streamID, playlistURL string, lastSeq int) error {
-	sd.mu.Lock()
-	fileCounter := sd.fileCounter
-	format := sd.format
-	sd.mu.Unlock()
-
-	log.DebugfC(sd.channel, "Saving metadata: fileCounter=%d, lastSeq=%d", fileCounter, lastSeq)
-
-	channelDir := sd.GetChannelDir()
-	if err := os.MkdirAll(channelDir, 0755); err != nil {
-		return fmt.Errorf("failed to create channel directory: %w", err)
-	}
-
-	metadata := SessionMetadata{
-		StreamID:    streamID,
-		PlaylistURL: playlistURL,
-		SessionDir:  sd.sessionDir,
-		Channel:     filepath.Base(channelDir),
-		StartTime:   time.Now().Format(time.RFC3339),
-		LastUpdated: time.Now().Format(time.RFC3339),
-		Format:      format,
-		FileCounter: fileCounter,
-		LastSeq:     lastSeq,
-	}
-
-	metadataPath := filepath.Join(channelDir, MetadataFileName)
-	data, err := json.MarshalIndent(metadata, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
-	}
-
-	if err := os.WriteFile(metadataPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write metadata: %w", err)
-	}
-
-	log.DebugfC(sd.channel, "Saved session metadata after download")
 	return nil
 }
 

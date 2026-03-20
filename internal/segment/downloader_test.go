@@ -27,9 +27,9 @@ func TestNewSegmentDownloader(t *testing.T) {
 func TestAddSegment(t *testing.T) {
 	sd := NewSegmentDownloader(".", "test", time.Now())
 
-	added1 := sd.AddSegment("http://example.com/segment1.ts")
-	added2 := sd.AddSegment("http://example.com/segment2.ts")
-	added3 := sd.AddSegment("http://example.com/segment1.ts")
+	added1 := sd.AddSegment("http://example.com/segment1.ts", 1)
+	added2 := sd.AddSegment("http://example.com/segment2.ts", 2)
+	added3 := sd.AddSegment("http://example.com/segment1.ts", 1)
 
 	assert.True(t, added1)
 	assert.True(t, added2)
@@ -51,7 +51,7 @@ func TestAddSegmentConcurrency(t *testing.T) {
 		go func(start int) {
 			defer wg.Done()
 			for j := start; j < start+10; j++ {
-				sd.AddSegment(segments[j])
+				sd.AddSegment(segments[j], j)
 			}
 		}(i * 10)
 	}
@@ -63,9 +63,9 @@ func TestAddSegmentConcurrency(t *testing.T) {
 func TestGetSegmentFilename(t *testing.T) {
 	sd := NewSegmentDownloader(".", "test", time.Now())
 
-	filename1 := sd.getSegmentFilename()
-	filename2 := sd.getSegmentFilename()
-	filename3 := sd.getSegmentFilename()
+	filename1 := sd.getSegmentFilename(1)
+	filename2 := sd.getSegmentFilename(2)
+	filename3 := sd.getSegmentFilename(3)
 
 	assert.Equal(t, "1.ts", filename1)
 	assert.Equal(t, "2.ts", filename2)
