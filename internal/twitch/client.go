@@ -320,6 +320,7 @@ func (c *Client) GetCachedToken(ctx context.Context, channel string) (*CachedTok
 	}
 
 	expiresAt, err := extractTokenExpiration(tokenSig.Data.StreamPlaybackAccessToken.Value)
+	fmt.Println(expiresAt)
 	if err != nil {
 		log.Warnf("Failed to parse token expiration, using default 4min: %v", err)
 		expiresAt = time.Now().Add(4 * time.Minute)
@@ -354,7 +355,7 @@ func extractTokenExpiration(tokenValue string) (time.Time, error) {
 		return time.Time{}, errors.New("expires field not found or invalid type")
 	}
 
-	return time.Unix(int64(expires), 0), nil
+	return time.Unix(int64(expires), 0).UTC(), nil
 }
 
 func (c *Client) GetLiveM3U8(ctx context.Context, channel string) (string, error) {
