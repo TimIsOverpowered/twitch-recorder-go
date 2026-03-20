@@ -88,7 +88,7 @@ func (r *Recorder) checkAndRecord(ctx context.Context) error {
 func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 	startTime := time.Now()
 
-	downloader, sessionDir, streamID, parser, err := r.findOrCreateSession(ctx, m3u8URL, startTime)
+	downloader, sessionDir, streamID, parser, err := r.findOrCreateSession()
 	if err != nil {
 		log.Errorf("Failed to find or create session: %v", err)
 		return err
@@ -184,7 +184,7 @@ func (r *Recorder) getCurrentStreamIDWithRetry(ctx context.Context, streamIDChan
 	}
 }
 
-func (r *Recorder) findOrCreateSession(ctx context.Context, m3u8URL string, startTime time.Time) (*segment.SegmentDownloader, string, string, *segment.PlaylistParser, error) {
+func (r *Recorder) findOrCreateSession() (*segment.SegmentDownloader, string, string, *segment.PlaylistParser, error) {
 	incompleteSession, err := segment.FindIncompleteSession(r.config.VodDirectory, r.channel)
 	if err != nil {
 		return nil, "", "", nil, err
