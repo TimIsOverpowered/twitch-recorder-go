@@ -228,3 +228,39 @@ func TestStatsZeroValues(t *testing.T) {
 		t.Errorf("expected 0 avg duration, got %v", stats.AvgDownloadDuration)
 	}
 }
+
+func TestUnboundedSliceGrowth(t *testing.T) {
+	m := metrics.NewMetrics()
+
+	for i := 0; i < 10000; i++ {
+		m.RecordSegmentDownload(1024, time.Duration(i)%time.Second)
+	}
+
+	stats := m.GetStats()
+	if stats.SegmentsDownloaded != 10000 {
+		t.Errorf("expected 10000 segments downloaded, got %d", stats.SegmentsDownloaded)
+	}
+
+	downloadDurationLen := m.GetDownloadDurationsCount()
+	if downloadDurationLen > 1000 {
+		t.Errorf("download durations slice should be bounded to 1000, got %d", downloadDurationLen)
+	}
+}
+
+func TestMemoryBoundedness(t *testing.T) {
+	m := metrics.NewMetrics()
+
+	for i := 0; i < 5000; i++ {
+		m.RecordSegmentDownload(1024*1024, time.Duration(i)%time.Second)
+	}
+
+	stats := m.GetStats()
+	if stats.SegmentsDownloaded != 5000 {
+		t.Errorf("expected 5000 segments downloaded, got %d", stats.SegmentsDownloaded)
+	}
+
+	downloadDurationLen := m.GetDownloadDurationsCount()
+	if downloadDurationLen > 1000 {
+		t.Errorf("download durations should be bounded to 1000, got %d", downloadDurationLen)
+	}
+}

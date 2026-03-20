@@ -2,14 +2,20 @@ package segment
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewPlaylistParser(t *testing.T) {
-	sd := NewSegmentDownloader(".", "test", time.Now())
+	tempDir, err := os.MkdirTemp("", "segment-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	sd := NewSegmentDownloader(tempDir, "test", time.Now())
 	parser := NewPlaylistParser(sd)
 
 	assert.NotNil(t, parser)
@@ -20,7 +26,11 @@ func TestNewPlaylistParser(t *testing.T) {
 }
 
 func TestIsLive(t *testing.T) {
-	sd := NewSegmentDownloader(".", "test", time.Now())
+	tempDir, err := os.MkdirTemp("", "segment-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	sd := NewSegmentDownloader(tempDir, "test", time.Now())
 	parser := NewPlaylistParser(sd)
 
 	assert.True(t, parser.IsLive())
@@ -33,7 +43,11 @@ func TestIsLive(t *testing.T) {
 }
 
 func TestDownloadQueuedSegmentsCancellation(t *testing.T) {
-	sd := NewSegmentDownloader(".", "test", time.Now())
+	tempDir, err := os.MkdirTemp("", "segment-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	sd := NewSegmentDownloader(tempDir, "test", time.Now())
 	sd.AddSegment("http://example.com/seg1.ts", 1)
 	sd.AddSegment("http://example.com/seg2.ts", 2)
 
@@ -44,14 +58,22 @@ func TestDownloadQueuedSegmentsCancellation(t *testing.T) {
 }
 
 func TestDownloadQueuedSegmentsEmpty(t *testing.T) {
-	sd := NewSegmentDownloader(".", "test", time.Now())
+	tempDir, err := os.MkdirTemp("", "segment-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	sd := NewSegmentDownloader(tempDir, "test", time.Now())
 
 	ctx := context.Background()
 	sd.DownloadQueuedSegments(ctx, 4)
 }
 
 func TestPlaylistParserStructure(t *testing.T) {
-	sd := NewSegmentDownloader(".", "test", time.Now())
+	tempDir, err := os.MkdirTemp("", "segment-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	sd := NewSegmentDownloader(tempDir, "test", time.Now())
 	parser := NewPlaylistParser(sd)
 
 	assert.NotNil(t, parser.downloader)

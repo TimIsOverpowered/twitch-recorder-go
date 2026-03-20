@@ -294,3 +294,9 @@ func (m *Metrics) Reset() {
 func (m *Metrics) GetUptime() time.Duration {
 	return time.Since(m.startTime)
 }
+
+func (m *Metrics) GetDownloadDurationsCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.downloadDurations)
+}

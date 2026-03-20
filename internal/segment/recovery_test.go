@@ -39,6 +39,10 @@ func TestIsIncompleteSession(t *testing.T) {
 	err = os.MkdirAll(sessionDir, 0755)
 	require.NoError(t, err)
 
+	metadataPath := filepath.Join(tempDir, "current_session.json")
+	err = os.WriteFile(metadataPath, []byte(`{"channel":"testchannel"}`), 0644)
+	require.NoError(t, err)
+
 	testFile := filepath.Join(sessionDir, "00001.ts")
 	err = os.WriteFile(testFile, []byte("test"), 0644)
 	require.NoError(t, err)

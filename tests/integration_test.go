@@ -156,12 +156,16 @@ func TestFullConfigWorkflow(t *testing.T) {
 }
 
 func TestContextCancellation(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "segment-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	sd := segment.NewSegmentDownloader(".", "test", time.Now())
+	sd := segment.NewSegmentDownloader(tempDir, "test", time.Now())
 
-	err := sd.DownloadSegment(ctx, "http://example.com/segment.ts", 1)
+	err = sd.DownloadSegment(ctx, "http://example.com/segment.ts", 1)
 
 	assert.Error(t, err)
 }

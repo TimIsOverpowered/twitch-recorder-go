@@ -16,10 +16,10 @@ func TestSanitizeChannelName(t *testing.T) {
 		{"valid name", "mychannel", "mychannel"},
 		{"name with spaces", "  my channel  ", "mychannel"},
 		{"name with invalid chars", "my<channel>", "my_channel_"},
-		{"name with slashes", "my/channel", "my_channel"},
-		{"name with dots", "my..channel", "my_channel"},
+		{"name with slashes", "my/channel", "unknown"},
+		{"name with dots", "my..channel", "unknown"},
 		{"too long name", "abcdefghijklmnopqrstuvwxyz", "abcdefghijklmnopqrstuvwxy"},
-		{"empty name", "", "___"},
+		{"empty name", "", "unknown"},
 		{"name with pipe", "my|channel", "my_channel"},
 		{"name with question mark", "my?channel", "my_channel"},
 		{"name with asterisk", "my*channel", "my_channel"},
@@ -96,4 +96,66 @@ func TestSanitizeFilenameMaxLength(t *testing.T) {
 
 	assert.LessOrEqual(t, len(result), 200, "Filename should not exceed max length")
 	assert.True(t, strings.HasSuffix(result, ".ts"), "Extension should be preserved")
+}
+
+func TestPathTraversalDetection(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"double dot", "../etc/passwd", "unknown"},
+		{"backslash traversal", "..\\..\\windows\\system32", "unknown"},
+		{"triple dot", ".../malicious", "unknown"},
+		{"embedded traversal", "channel/../secret", "unknown"},
+		{"forward slash", "my/channel", "unknown"},
+		{"backslash", "my\\channel", "unknown"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SanitizeChannelName(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestPathTraversalRejection(t *testing.T) {
+	maliciousInputs := []string{
+		"../etc/passwd",
+		"..\\..\\windows\\system32",
+		"channel/../secret",
+		"../../tmp/malicious",
+	}
+
+	for _, input := range maliciousInputs {
+		t.Run(input, func(t *testing.T) {
+			result := SanitizeChannelName(input)
+			assert.NotContains(t, result, "..", "Sanitized name should not contain '..' for input: %s", input)
+			assert.NotContains(t, result, "/", "Sanitized name should not contain '/' for input: %s", input)
+			assert.NotContains(t, result, "\\", "Sanitized name should not contain '\\' for input: %s", input)
+		})
+	}
+}
+
+func TestIsSafePathTraversal(t *testing.T) {
+	tests := []struct {
+		name     string
+		basePath string
+		fullPath string
+		expected bool
+	}{
+		{"valid nested path", "/recordings/channel", "/recordings/channel/subdir/file.ts", true},
+		{"simple traversal", "/recordings", "/recordings/../etc/passwd", false},
+		{"double traversal", "/recordings/channel", "/recordings/channel/../../tmp/file", false},
+		{"absolute different base", "/recordings", "/other/path/file.ts", false},
+		{"triple dots", "/recordings", "/recordings/.../malicious", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsSafePath(tt.basePath, tt.fullPath)
+			assert.Equal(t, tt.expected, result, "IsSafePath failed for: %s", tt.fullPath)
+		})
+	}
 }

@@ -1,6 +1,8 @@
 package twitch
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -119,4 +121,82 @@ func TestTwitchTokenStructure(t *testing.T) {
 	assert.Equal(t, "test_token", token.AccessToken)
 	assert.Equal(t, 3600, token.ExpiresIn)
 	assert.Equal(t, "bearer", token.TokenType)
+}
+
+func TestConcurrentTokenCacheAccess(t *testing.T) {
+	client := NewClient("test_id", "test_secret", "test_oauth", nil)
+	var wg sync.WaitGroup
+
+	for i := 0; i < 10; i++ {
+		wg.Add(3)
+
+		go func(ch string) {
+			defer wg.Done()
+			client.tokenCacheMu.Lock()
+			client.tokenCache[ch] = &CachedToken{
+				Value:     "test_token",
+				ExpiresAt: time.Now().Add(time.Hour),
+			}
+			client.tokenCacheMu.Unlock()
+		}("channel_" + string(rune('a'+i)))
+
+		go func(ch string) {
+			defer wg.Done()
+			client.tokenCacheMu.RLock()
+			_, ok := client.tokenCache[ch]
+			client.tokenCacheMu.RUnlock()
+			_ = ok
+		}("channel_" + string(rune('a'+i)))
+
+		go func(ch string) {
+			defer wg.Done()
+			client.tokenCacheMu.Lock()
+			delete(client.tokenCache, ch)
+			client.tokenCacheMu.Unlock()
+		}("channel_" + string(rune('a'+i)))
+	}
+
+	wg.Wait()
+	assert.NotNil(t, client.tokenCache)
+}
+
+func TestConcurrentTokenRefresh(t *testing.T) {
+	client := NewClient("test_id", "test_secret", "test_oauth", nil)
+	var wg sync.WaitGroup
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			client.mu.Lock()
+			wasRefreshing := client.isRefreshingToken
+			if !wasRefreshing {
+				client.isRefreshingToken = true
+			}
+			client.mu.Unlock()
+
+			time.Sleep(1 * time.Millisecond)
+
+			client.mu.Lock()
+			if wasRefreshing {
+				client.isRefreshingToken = false
+			}
+			client.mu.Unlock()
+		}()
+	}
+
+	wg.Wait()
+	assert.False(t, client.isRefreshingToken)
+}
+
+func TestErrUserNotFound(t *testing.T) {
+	err := fmt.Errorf("%w: testuser", ErrUserNotFound)
+	assert.ErrorIs(t, err, ErrUserNotFound)
+	assert.Contains(t, err.Error(), "testuser")
+}
+
+func TestErrStreamNotFound(t *testing.T) {
+	err := fmt.Errorf("%w: testuser", ErrStreamNotFound)
+	assert.ErrorIs(t, err, ErrStreamNotFound)
+	assert.Contains(t, err.Error(), "testuser")
 }
