@@ -18,7 +18,6 @@ import (
 	"twitch-recorder-go/internal/ratelimit"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/grafov/m3u8"
 )
 
@@ -345,22 +344,17 @@ func extractTokenExpiration(tokenValue string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("failed to decode token: %w", err)
 	}
 
-	token, _, err := jwt.NewParser().ParseUnverified(decoded, jwt.MapClaims{})
-	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to parse JWT: %w", err)
+	var claims map[string]interface{}
+	if err := json.Unmarshal([]byte(decoded), &claims); err != nil {
+		return time.Time{}, fmt.Errorf("failed to parse token JSON: %w", err)
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
+	expires, ok := claims["expires"].(float64)
 	if !ok {
-		return time.Time{}, errors.New("invalid token claims")
+		return time.Time{}, errors.New("expires field not found or invalid type")
 	}
 
-	exp, ok := claims["exp"].(float64)
-	if !ok {
-		return time.Time{}, errors.New("exp claim not found or invalid type")
-	}
-
-	return time.Unix(int64(exp), 0), nil
+	return time.Unix(int64(expires), 0), nil
 }
 
 func (c *Client) GetLiveM3U8(ctx context.Context, channel string) (string, error) {
