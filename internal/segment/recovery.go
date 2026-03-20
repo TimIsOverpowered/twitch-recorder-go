@@ -8,10 +8,6 @@ import (
 	"strings"
 )
 
-func RecoverIncompleteSessions(vodDirectory string, channels []string) {
-	// No-op - recovery is now automatic in recorder
-}
-
 func isIncompleteSession(sessionDir string) bool {
 	tsFiles, _ := filepath.Glob(filepath.Join(sessionDir, "*.ts"))
 	mp4Segments, _ := filepath.Glob(filepath.Join(sessionDir, "*.mp4"))

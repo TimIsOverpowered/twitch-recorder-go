@@ -80,31 +80,3 @@ func TestIsIncompleteSessionNoSegments(t *testing.T) {
 	incomplete := isIncompleteSession(sessionDir)
 	assert.False(t, incomplete)
 }
-
-func TestRecoverIncompleteSessions(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "recovery-test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
-	channelDir := filepath.Join(tempDir, "testchannel")
-	err = os.MkdirAll(channelDir, 0755)
-	require.NoError(t, err)
-
-	sessionDir := filepath.Join(channelDir, "testchannel_2026-03-19_14-30-00")
-	err = os.MkdirAll(sessionDir, 0755)
-	require.NoError(t, err)
-
-	testFile := filepath.Join(sessionDir, "00001.ts")
-	err = os.WriteFile(testFile, []byte("test"), 0644)
-	require.NoError(t, err)
-
-	RecoverIncompleteSessions(tempDir, []string{"testchannel"})
-}
-
-func TestRecoverIncompleteSessionsNoChannelDir(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "recovery-test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
-	RecoverIncompleteSessions(tempDir, []string{"nonexistent"})
-}
