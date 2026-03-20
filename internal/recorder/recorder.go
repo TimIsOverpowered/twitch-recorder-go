@@ -77,7 +77,7 @@ func (r *Recorder) MonitorChannel(ctx context.Context) error {
 func (r *Recorder) checkAndRecord(ctx context.Context) error {
 	m3u8URL, err := r.twitchClient.GetLiveM3U8(ctx, r.channel)
 	if err != nil {
-		log.ErrorC(r.channel, "%v", err)
+		log.ErrorfC(r.channel, "%v", err)
 		return nil
 	}
 
