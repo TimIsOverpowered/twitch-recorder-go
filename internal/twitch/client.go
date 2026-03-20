@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -339,7 +340,12 @@ func (c *Client) GetCachedToken(ctx context.Context, channel string) (*CachedTok
 }
 
 func extractTokenExpiration(tokenValue string) (time.Time, error) {
-	token, _, err := jwt.NewParser().ParseUnverified(tokenValue, jwt.MapClaims{})
+	decoded, err := url.QueryUnescape(tokenValue)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to decode token: %w", err)
+	}
+
+	token, _, err := jwt.NewParser().ParseUnverified(decoded, jwt.MapClaims{})
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to parse JWT: %w", err)
 	}
