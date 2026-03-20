@@ -34,6 +34,7 @@ type Config struct {
 		Endpoint string `json:"endpoint"`
 		Key      string `json:"key"`
 	} `json:"archive"`
+	TestFinalizeAfter int `json:"-"`
 }
 
 type TwitchToken struct {

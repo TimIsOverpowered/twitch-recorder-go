@@ -73,10 +73,6 @@ func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
 		}
 	}
 
-	if err := sd.DeletePlaylist(); err != nil {
-		log.Warnf("Failed to delete playlist marker: %v", err)
-	}
-
 	if err := sd.DeleteSessionMetadata(); err != nil {
 		log.Warnf("Failed to delete session metadata: %v", err)
 	}

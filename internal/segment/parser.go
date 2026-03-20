@@ -85,7 +85,7 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 		if mediaPlaylist.Map != nil && pp.initSegment == "" {
 			pp.initSegment = mediaPlaylist.Map.URI
 			pp.downloader.SetInitSegment(pp.initSegment)
-			log.Debugf("Found init segment: %s", pp.initSegment)
+			log.DebugfC(pp.downloader.channel, "Found init segment: %s", pp.initSegment)
 		}
 
 		if len(mediaPlaylist.Segments) > 0 && mediaPlaylist.Segments[0] != nil {
@@ -94,10 +94,10 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 			baseURL := strings.Split(firstSeg, "?")[0]
 			if strings.HasSuffix(baseURL, ".mp4") {
 				pp.format = "mp4"
-				log.Debugf("Detected fMP4 format")
+				log.DebugfC(pp.downloader.channel, "Detected fMP4 format")
 			} else {
 				pp.format = "ts"
-				log.Debugf("Detected TS format")
+				log.DebugfC(pp.downloader.channel, "Detected TS format")
 			}
 			pp.downloader.SetFormat(pp.format)
 		}
@@ -119,7 +119,7 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 
 			// Skip if this segment was already downloaded
 			if segmentSeq <= lastSeq {
-				log.Debugf("Skipping already-downloaded segment: seq=%d", segmentSeq)
+				log.DebugfC(pp.downloader.channel, "Skipping already-downloaded segment: seq=%d", segmentSeq)
 				continue
 			}
 
@@ -132,7 +132,7 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 				highestAddedSeq = segmentSeq
 			}
 
-			log.Debugf("New segment found: seq=%d, url=%s", segmentSeq, segment.URI[:min(50, len(segment.URI))])
+			log.DebugfC(pp.downloader.channel, "New segment found: seq=%d, url=%s", segmentSeq, segment.URI[:min(50, len(segment.URI))])
 		}
 
 		// Update lastSeq to the highest sequence number we actually added
@@ -144,10 +144,6 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 
 	default:
 		return fmt.Errorf("unknown playlist type: %v", listType)
-	}
-
-	if err := pp.downloader.SavePlaylist(body.Bytes(), m3u8URL); err != nil {
-		log.Debugf("Failed to save playlist marker: %v", err)
 	}
 
 	return nil

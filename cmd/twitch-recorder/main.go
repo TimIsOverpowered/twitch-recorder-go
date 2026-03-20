@@ -21,11 +21,13 @@ import (
 )
 
 var (
-	cfgPath       string
-	uploadToDrive bool
-	httpClient    *resty.Client
-	recorders     map[string]*recorder.Recorder
-	recordersMu   sync.RWMutex
+	cfgPath              string
+	uploadToDrive        bool
+	testFinalizeAfter    int
+	httpClient           *resty.Client
+	recorders            map[string]*recorder.Recorder
+	recordersMu          sync.RWMutex
+	testFinalizationDone chan struct{}
 )
 
 func init() {
@@ -52,7 +54,12 @@ func main() {
 	flag.BoolVar(&uploadToDrive, "drive", false, "Upload recordings to Google Drive")
 	flag.StringVar(&cfgPath, "config", "config.json", "Path to config file")
 	flag.StringVar(&logLevel, "loglevel", "info", "Log level: error, warn, info, debug")
+	flag.IntVar(&testFinalizeAfter, "test-finalize-after", 0, "[TESTING] Force finalization after N seconds (default: 10)")
 	flag.Parse()
+
+	if testFinalizeAfter == 0 && flag.Lookup("test-finalize-after").Value.String() != "0" {
+		testFinalizeAfter = 10
+	}
 
 	log.Init(logLevel)
 
@@ -64,6 +71,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	if testFinalizeAfter > 0 || flag.Lookup("test-finalize-after").Value.String() != "0" {
+		c.TestFinalizeAfter = testFinalizeAfter
+	}
+
 	if err := segment.ValidateConfig(c.VodDirectory, c.Channels); err != nil {
 		log.Errorf("Invalid configuration: %v", err)
 		os.Exit(1)
@@ -72,37 +83,17 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	testFinalizationDone = make(chan struct{})
+
 	m := metrics.NewMetrics()
 
 	twitchClient := createTwitchClient(c)
 	twitchClient.SetMetrics(m)
 
-	log.Info("Validating channels...")
-	validChannels := make([]string, 0, len(c.Channels))
-	var valWg sync.WaitGroup
-
-	for _, channel := range c.Channels {
-		valWg.Add(1)
-		go func(ch string) {
-			defer valWg.Done()
-			user, err := twitchClient.GetUser(ctx, ch)
-			if err != nil {
-				log.Warn("Error checking user %s: %v", ch, err)
-				return
-			}
-			if user == nil {
-				log.Infof("%s does not exist", ch)
-				return
-			}
-			validChannels = append(validChannels, ch)
-		}(channel)
-	}
-	valWg.Wait()
-
-	log.Infof("Starting monitors for %d valid channels", len(validChannels))
+	log.Infof("Starting monitors for %d channels", len(c.Channels))
 
 	var wg sync.WaitGroup
-	for _, channel := range validChannels {
+	for _, channel := range c.Channels {
 		wg.Add(1)
 		go func(ch string) {
 			defer wg.Done()
@@ -116,7 +107,15 @@ func main() {
 			recorders[ch] = rec
 			recordersMu.Unlock()
 
-			rec.MonitorChannel(ctx)
+			if err := rec.MonitorChannel(ctx); err == recorder.ErrInvalidUser {
+				log.Infof("Removed invalid channel from monitoring: %s", ch)
+				recordersMu.Lock()
+				delete(recorders, ch)
+				recordersMu.Unlock()
+			} else if err == recorder.ErrTestFinalized {
+				log.Infof("[TEST] Test finalization completed for %s, exiting...", ch)
+				close(testFinalizationDone)
+			}
 		}(channel)
 	}
 
@@ -125,7 +124,10 @@ func main() {
 		cancel()
 	}()
 
-	<-ctx.Done()
+	select {
+	case <-ctx.Done():
+	case <-testFinalizationDone:
+	}
 
 	recordersMu.RLock()
 	for _, rec := range recorders {

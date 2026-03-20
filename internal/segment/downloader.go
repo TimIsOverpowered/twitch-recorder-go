@@ -30,11 +30,11 @@ type SessionMetadata struct {
 
 const (
 	MetadataFileName = "current_session.json"
-	PlaylistFileName = "playlist.m3u8"
 )
 
 type SegmentDownloader struct {
 	sessionDir  string
+	channel     string
 	seen        map[string]bool
 	segments    []string
 	mu          sync.Mutex
@@ -54,11 +54,12 @@ func NewSegmentDownloader(vodDirectory, channel string, timestamp time.Time) *Se
 	sessionDir := filepath.Join(channelDir, timestamp.Format("2006-01-02_15-04-05"))
 
 	if err := os.MkdirAll(channelDir, 0755); err != nil {
-		log.Errorf("Failed to create channel directory %s: %v", channelDir, err)
+		log.ErrorfC(channel, "Failed to create channel directory %s: %v", channelDir, err)
 	}
 
 	return &SegmentDownloader{
 		sessionDir: sessionDir,
+		channel:    channel,
 		seen:       make(map[string]bool),
 		segments:   make([]string, 0),
 	}
@@ -77,11 +78,12 @@ func NewSegmentDownloaderFromSession(sessionDir string) *SegmentDownloader {
 	}
 
 	if metadata != nil {
+		sd.channel = metadata.Channel
 		sd.fileCounter = metadata.FileCounter
 		if metadata.Format != "" {
 			sd.format = metadata.Format
 		}
-		log.Infof("Restored session state: fileCounter=%d, lastSeq=%d", sd.fileCounter, metadata.LastSeq)
+		log.InfofC(sd.channel, "Restored session state: fileCounter=%d, lastSeq=%d", sd.fileCounter, metadata.LastSeq)
 	} else {
 		sd.fileCounter = sd.scanForHighestFileNumber()
 		sd.format = sd.DetectFormatFromFiles()
@@ -146,7 +148,7 @@ func (sd *SegmentDownloader) DownloadQueuedSegments(ctx context.Context, concurr
 
 	wg.Wait()
 	if batchSize > 0 {
-		log.Debugf("Batch complete: downloaded %d/%d segments", batchDownloaded, batchSize)
+		log.DebugfC(sd.channel, "Batch complete: downloaded %d/%d segments", batchDownloaded, batchSize)
 	}
 }
 
@@ -218,7 +220,7 @@ func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string, ba
 			sd.metrics.RecordSegmentDownload(written, duration)
 		}
 
-		log.Debugf("Downloaded segment #%d (%.2f MB)", fileNum, float64(written)/1024/1024)
+		log.DebugfC(sd.channel, "Downloaded segment #%d (%.2f MB)", fileNum, float64(written)/1024/1024)
 		return nil
 	}
 
@@ -233,7 +235,7 @@ func (sd *SegmentDownloader) sleepWithBackoff(attempt int) {
 	if backoff > 8*time.Second {
 		backoff = 8 * time.Second
 	}
-	log.Debugf("Retrying in %v...", backoff)
+	log.DebugfC(sd.channel, "Retrying in %v...", backoff)
 	time.Sleep(backoff)
 }
 
@@ -321,7 +323,7 @@ func (sd *SegmentDownloader) SaveSessionMetadata(streamID, playlistURL string) e
 		return fmt.Errorf("failed to write metadata: %w", err)
 	}
 
-	log.Debugf("Saved session metadata to %s", metadataPath)
+	log.DebugfC(sd.channel, "Saved session metadata to %s", metadataPath)
 	return nil
 }
 
@@ -342,7 +344,7 @@ func (sd *SegmentDownloader) LoadSessionMetadata() (*SessionMetadata, error) {
 		return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
 	}
 
-	log.Debugf("Loaded session metadata from %s", metadataPath)
+	log.DebugfC(sd.channel, "Loaded session metadata from %s", metadataPath)
 	return &metadata, nil
 }
 
@@ -354,32 +356,7 @@ func (sd *SegmentDownloader) DeleteSessionMetadata() error {
 		return fmt.Errorf("failed to delete metadata: %w", err)
 	}
 
-	log.Debugf("Deleted session metadata from %s", metadataPath)
-	return nil
-}
-
-func (sd *SegmentDownloader) SavePlaylist(content []byte, url string) error {
-	if err := os.MkdirAll(sd.sessionDir, 0755); err != nil {
-		return fmt.Errorf("failed to create session directory: %w", err)
-	}
-
-	playlistPath := filepath.Join(sd.sessionDir, PlaylistFileName)
-	if err := os.WriteFile(playlistPath, content, 0644); err != nil {
-		return fmt.Errorf("failed to write playlist file: %w", err)
-	}
-
-	log.Debugf("Saved playlist marker to %s", playlistPath)
-	return nil
-}
-
-func (sd *SegmentDownloader) DeletePlaylist() error {
-	playlistPath := filepath.Join(sd.sessionDir, PlaylistFileName)
-
-	if err := os.Remove(playlistPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to delete playlist: %w", err)
-	}
-
-	log.Debugf("Deleted playlist marker from %s", playlistPath)
+	log.DebugfC(sd.channel, "Deleted session metadata from %s", metadataPath)
 	return nil
 }
 
@@ -409,10 +386,6 @@ func (sd *SegmentDownloader) DeleteSessionDir() error {
 }
 
 func (sd *SegmentDownloader) CleanupIncompleteSession() error {
-	if err := sd.DeletePlaylist(); err != nil {
-		log.Warnf("Failed to delete playlist: %v", err)
-	}
-
 	if err := sd.DeleteSessionMetadata(); err != nil {
 		log.Warnf("Failed to delete metadata: %v", err)
 	}
@@ -475,7 +448,7 @@ func (sd *SegmentDownloader) SaveSessionMetadataAfterDownload(streamID, playlist
 	format := sd.format
 	sd.mu.Unlock()
 
-	log.Debugf("Saving metadata: fileCounter=%d, lastSeq=%d", fileCounter, lastSeq)
+	log.DebugfC(sd.channel, "Saving metadata: fileCounter=%d, lastSeq=%d", fileCounter, lastSeq)
 
 	channelDir := sd.GetChannelDir()
 	if err := os.MkdirAll(channelDir, 0755); err != nil {
@@ -504,7 +477,7 @@ func (sd *SegmentDownloader) SaveSessionMetadataAfterDownload(streamID, playlist
 		return fmt.Errorf("failed to write metadata: %w", err)
 	}
 
-	log.Debugf("Saved session metadata after download")
+	log.DebugfC(sd.channel, "Saved session metadata after download")
 	return nil
 }
 

@@ -298,11 +298,13 @@ func (c *Client) GetLiveTokenSig(ctx context.Context, channel string) (*TokenSig
 	}
 
 	if response.Data.StreamPlaybackAccessToken == nil || response.Data.StreamPlaybackAccessToken.Value == "" {
-		return nil, errors.New("failed to get live token sig")
+		return nil, ErrInvalidUser
 	}
 
 	return &response, nil
 }
+
+var ErrInvalidUser = errors.New("user is invalid or does not exist")
 
 func (c *Client) GetCachedToken(ctx context.Context, channel string) (*CachedToken, error) {
 	c.tokenCacheMu.RLock()
