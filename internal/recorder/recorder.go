@@ -316,7 +316,7 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 			}
 
 			if err != nil {
-				log.WarnC(r.channel, "Failed to upload to Drive: %v", err)
+				log.WarnfC(r.channel, "Failed to upload to Drive: %v", err)
 			}
 		}
 
