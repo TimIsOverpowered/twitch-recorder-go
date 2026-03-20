@@ -47,8 +47,7 @@ type Metrics struct {
 	streamsOffline int64
 
 	// Timing metrics
-	avgDownloadDuration time.Duration
-	downloadDurations   []time.Duration
+	downloadDurations []time.Duration
 
 	startTime time.Time
 }

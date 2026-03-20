@@ -67,9 +67,5 @@ func IsSafePath(basePath, fullPath string) bool {
 	}
 
 	relative := fullPath[len(basePath):]
-	if strings.Contains(relative, "..") {
-		return false
-	}
-
-	return true
+	return !strings.Contains(relative, "..")
 }

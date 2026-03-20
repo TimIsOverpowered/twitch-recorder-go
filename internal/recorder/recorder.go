@@ -184,19 +184,6 @@ func (r *Recorder) getCurrentStreamIDWithRetry(ctx context.Context, streamIDChan
 	}
 }
 
-func (r *Recorder) getCurrentStreamIDOnce(ctx context.Context) (string, error) {
-	streams, err := r.twitchClient.GetStreams(ctx, r.channel)
-	if err != nil {
-		return "", err
-	}
-
-	if len(streams.Data) == 0 {
-		return "", fmt.Errorf("channel is not live")
-	}
-
-	return streams.Data[0].ID, nil
-}
-
 func (r *Recorder) findOrCreateSession(ctx context.Context, m3u8URL string, startTime time.Time) (*segment.SegmentDownloader, string, string, *segment.PlaylistParser, error) {
 	incompleteSession, err := segment.FindIncompleteSession(r.config.VodDirectory, r.channel)
 	if err != nil {
@@ -266,15 +253,15 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 	default:
 	}
 
-	folderName := r.channel
-	if streamID != "" {
-		folderName = streamID
-	} else {
+	folderName := streamID
+	if folderName == "" {
+		folderName = r.channel
+	}
+	if streamID == "" && folderName == r.channel {
 		folderName = filepath.Base(sessionDir)
 	}
 
-	outputName := folderName
-	outputFile := fmt.Sprintf("%s/%s.mp4", sessionDir, outputName)
+	outputFile := fmt.Sprintf("%s/%s.mp4", sessionDir, folderName)
 
 	resultChan, cancel := downloader.FinalizeAsync(outputFile)
 	defer cancel()

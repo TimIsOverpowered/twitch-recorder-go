@@ -21,13 +21,11 @@ import (
 )
 
 var (
-	cfgPath           string
-	uploadToDrive     bool
-	httpClient        *resty.Client
-	isRefreshingToken bool
-	tokenMu           sync.Mutex
-	recorders         map[string]*recorder.Recorder
-	recordersMu       sync.RWMutex
+	cfgPath       string
+	uploadToDrive bool
+	httpClient    *resty.Client
+	recorders     map[string]*recorder.Recorder
+	recordersMu   sync.RWMutex
 )
 
 func init() {
