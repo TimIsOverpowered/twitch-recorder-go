@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"twitch-recorder-go/internal/api"
+	"twitch-recorder-go/internal/chatlogs"
 	"twitch-recorder-go/internal/config"
 	"twitch-recorder-go/internal/drive"
 	"twitch-recorder-go/internal/log"
@@ -237,13 +238,15 @@ func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 
 		downloader.DownloadQueuedSegments(ctx, DownloadConcurrency)
 
-		if streamID != "" {
-			lastSeq := downloader.GetLastDownloadedSeq()
-			if lastSeq > 0 {
-				if err := downloader.SaveSessionMetadataAfterDownload(streamID, m3u8URL, lastSeq); err != nil {
-					log.WarnfC(r.channel, "Failed to save session metadata: %v", err)
-				} else {
+		lastSeq := downloader.GetLastDownloadedSeq()
+		if lastSeq > 0 {
+			if err := downloader.SaveSessionMetadataAfterDownload(streamID, m3u8URL, lastSeq); err != nil {
+				log.WarnfC(r.channel, "Failed to save session metadata: %v", err)
+			} else {
+				if streamID != "" {
 					log.DebugfC(r.channel, "Saved metadata with stream_id=%s, lastSeq=%d", streamID, lastSeq)
+				} else {
+					log.DebugfC(r.channel, "Saved metadata (stream_id pending), lastSeq=%d", lastSeq)
 				}
 			}
 		}
@@ -407,6 +410,15 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 			}
 		} else if isTest {
 			log.DebugfC(r.channel, "[TEST] Skipped Archive API post (test mode)")
+		}
+
+		if !isTest && r.config.Logs.Enabled && streamID != "" {
+			go func() {
+				outputDir := filepath.Dir(result.OutputFile)
+				if err := chatlogs.FetchAndSaveChatLogs(r.config, r.twitchClient, r.channel, streamID, outputDir); err != nil {
+					log.WarnfC(r.channel, "Failed to fetch chat logs: %v", err)
+				}
+			}()
 		}
 	}()
 

@@ -70,7 +70,18 @@ Replace the example channel with Twitch channels you want to record:
 "channels": ["channel1", "channel2", "channel3"]
 ```
 
-### Step 5: Google Drive Upload (Optional)
+### Step 5: Chat Logs (Optional)
+
+To automatically fetch and save chat logs for recorded streams:
+
+1. Set `"logs.enabled": true` in config.json
+2. The recorder will automatically fetch chat logs after each stream ends
+3. Chat logs are saved as `{stream_id}_chat.json` in the same directory as the MP4 file
+4. Logs contain raw chat data from Twitch's API (messages, timestamps, user info, badges, etc.)
+
+**Note:** Chat logs are fetched asynchronously after the VOD is processed by Twitch. The file will be saved alongside your recording.
+
+### Step 6: Google Drive Upload (Optional)
 
 To enable automatic uploads to Google Drive after recording:
 
@@ -128,6 +139,9 @@ The program auto-generates `config.json` on first run. Update these fields:
     "enabled": false,
     "endpoint": "", // Supports {channel} placeholder
     "key": ""
+  },
+  "logs": {
+    "enabled": false // Fetch and save chat logs for recorded streams
   }
 }
 ```
@@ -145,6 +159,7 @@ The program auto-generates `config.json` on first run. Update these fields:
 | `drive.access_token`   | No\*     | Google Drive access token                  |
 | `google.client_id`     | No\*     | Google OAuth Client ID                     |
 | `google.client_secret` | No\*     | Google OAuth Client Secret                 |
+| `logs.enabled`         | No       | Fetch and save chat logs for streams       |
 
 \*Required only if using `-drive` flag
 
@@ -159,6 +174,18 @@ The program auto-generates `config.json` on first run. Update these fields:
 - `-config` - Path to config file (default: ./config.json)
 - `-drive` - Enable Google Drive upload (requires drive credentials in config)
 - `-loglevel` - Set log level: error, warn, info, debug (default: info)
+
+## Output Files
+
+### Video Files
+Recorded videos are saved as `{stream_id}.mp4` in the configured `vod_directory`.
+
+### Chat Logs
+When `logs.enabled` is true, chat logs are saved as `{stream_id}_chat.json` alongside the video file. The JSON contains an array of raw chat message objects with:
+- Message content and timestamp
+- User information (ID, username, display name)
+- Message metadata (likes, edits, position in stream)
+- All fields from Twitch's GQL API response
 
 ## Build from Source
 

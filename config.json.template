@@ -33,5 +33,9 @@
         "enabled": false,
         "endpoint": "", // Supports {channel} placeholder, e.g.: "https://archive.overpowered.tv/{channel}/v2/live"
         "key": ""
+    },
+    // CHAT LOGS (OPTIONAL) - Fetch and save chat logs for recorded streams
+    "logs": {
+        "enabled": false // When enabled, saves raw chat messages to {stream_id}_chat.json alongside the MP4
     }
 }

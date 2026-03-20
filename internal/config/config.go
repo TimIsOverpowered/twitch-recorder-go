@@ -36,6 +36,9 @@ type Config struct {
 		Endpoint string `json:"endpoint"`
 		Key      string `json:"key"`
 	} `json:"archive"`
+	Logs struct {
+		Enabled bool `json:"enabled"`
+	} `json:"logs"`
 	TestFinalizeAfter int `json:"-"`
 }
 

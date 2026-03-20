@@ -6,10 +6,12 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"twitch-recorder-go/internal/chatlogs"
 	"twitch-recorder-go/internal/config"
 	"twitch-recorder-go/internal/log"
 	"twitch-recorder-go/internal/metrics"
@@ -24,6 +26,7 @@ var (
 	cfgPath              string
 	uploadToDrive        bool
 	testFinalizeAfter    int
+	testChatLogs         string
 	httpClient           *resty.Client
 	recorders            map[string]*recorder.Recorder
 	recordersMu          sync.RWMutex
@@ -56,6 +59,7 @@ func main() {
 	flag.StringVar(&cfgPath, "config", "config.json", "Path to config file")
 	flag.StringVar(&logLevel, "loglevel", "info", "Log level: error, warn, info, debug")
 	flag.IntVar(&testFinalizeAfter, "test-finalize-after", 0, "[TESTING] Force finalization after N seconds (default: 10)")
+	flag.StringVar(&testChatLogs, "test-chat-logs", "", "[TESTING] Fetch chat logs for a specific stream_id (e.g., \"2234567890\")")
 	flag.Parse()
 
 	log.Init(logLevel)
@@ -77,15 +81,35 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
-	testFinalizationDone = make(chan struct{})
-
 	m := metrics.NewMetrics()
 
 	twitchClient := createTwitchClient(c)
 	twitchClient.SetMetrics(m)
+
+	if testChatLogs != "" {
+		parts := strings.SplitN(testChatLogs, ":", 2)
+		if len(parts) != 2 {
+			log.Errorf("[TEST] Invalid format for -test-chat-logs. Expected: \"channel:stream_id\", got: %s", testChatLogs)
+			os.Exit(1)
+		}
+
+		channel := parts[0]
+		streamID := parts[1]
+
+		log.Infof("[TEST] Fetching chat logs for channel=%s, stream_id=%s", channel, streamID)
+		outputDir := c.VodDirectory
+		if err := fetchTestChatLogs(twitchClient, c, channel, streamID, outputDir); err != nil {
+			log.Errorf("[TEST] Failed to fetch chat logs: %v", err)
+			os.Exit(1)
+		}
+		log.Infof("[TEST] Chat logs test completed")
+		os.Exit(0)
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	testFinalizationDone = make(chan struct{})
 
 	log.Infof("Starting monitors for %d channels", len(c.Channels))
 
@@ -229,6 +253,10 @@ func printMetrics(m *metrics.Metrics) {
 		log.Infof("  Last Upload: %v ago", time.Since(stats.DriveLastUploadTime))
 	}
 	log.Infof("========================================")
+}
+
+func fetchTestChatLogs(twitchClient *twitch.Client, cfg *config.Config, channel, streamID, outputDir string) error {
+	return chatlogs.FetchAndSaveChatLogs(cfg, twitchClient, channel, streamID, outputDir)
 }
 
 func generateDefaultConfig(configPath string) error {

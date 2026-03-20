@@ -432,3 +432,140 @@ func (c *Client) GetLiveM3U8(ctx context.Context, channel string) (string, error
 
 	return "", errors.New("cannot find chunked variant in playlist")
 }
+
+// GetVODByChannelAndStreamID retrieves the latest archive VOD for a channel and verifies it matches the given stream ID
+func (c *Client) GetVODByChannelAndStreamID(channel, streamID string) (*VOD, error) {
+	if err := c.ensureAccessToken(context.Background()); err != nil {
+		if c.metrics != nil {
+			c.metrics.RecordAPICall(false, 0)
+		}
+		return nil, fmt.Errorf("failed to get access token: %w", err)
+	}
+
+	user, err := c.GetUser(context.Background(), channel)
+	if err != nil {
+		log.Debugf("GetVODByChannelAndStreamID failed to get user for channel %s: %v", channel, err)
+		return nil, fmt.Errorf("failed to get user_id for channel %s: %w", channel, err)
+	}
+
+	c.rateLimiter.Wait()
+
+	var response struct {
+		Data []VOD `json:"data"`
+	}
+
+	resp, err := c.httpClient.R().
+		SetHeader("Client-ID", c.getClientID()).
+		SetHeader("Authorization", "Bearer "+c.getAccessToken()).
+		SetQueryParams(map[string]string{
+			"user_id": user.ID,
+			"type":    "archive",
+			"first":   "1",
+		}).
+		SetResult(&response).
+		Get(TwitchAPIBase + "/videos")
+
+	if err != nil {
+		log.Debugf("GetVODByChannelAndStreamID API error for channel %s: %v", channel, err)
+		return nil, fmt.Errorf("failed to fetch videos: %w", err)
+	}
+
+	log.Debugf("GetVODByChannelAndStreamID response for channel %s stream_id %s: status=%d, body=%s", channel, streamID, resp.StatusCode(), string(resp.Body()))
+
+	if resp.IsError() {
+		log.Debugf("GetVODByChannelAndStreamID error response: status=%d, body=%s", resp.StatusCode(), string(resp.Body()))
+		return nil, &APIError{StatusCode: resp.StatusCode(), Body: string(resp.Body())}
+	}
+
+	if len(response.Data) == 0 {
+		log.Debugf("GetVODByChannelAndStreamID no videos found for channel %s", channel)
+		return nil, fmt.Errorf("no archive videos found for channel %s", channel)
+	}
+
+	latestVOD := response.Data[0]
+	log.Debugf("GetVODByChannelAndStreamID latest VOD for channel %s: vod_id=%s, vod_stream_id=%s, target_stream_id=%s", channel, latestVOD.ID, latestVOD.StreamID, streamID)
+
+	if latestVOD.StreamID != streamID {
+		log.Debugf("GetVODByChannelAndStreamID stream_id mismatch: expected %s, got %s", streamID, latestVOD.StreamID)
+		return nil, fmt.Errorf("latest VOD for channel %s does not match stream_id %s (VOD has stream_id=%s)", channel, streamID, latestVOD.StreamID)
+	}
+
+	log.Debugf("GetVODByChannelAndStreamID found matching VOD: vod_id=%s", latestVOD.ID)
+	return &latestVOD, nil
+}
+
+// FetchComments fetches the first page of chat comments for a VOD
+func (c *Client) FetchComments(vodID string, offset int) (*ChatResponse, error) {
+	body := fmt.Sprintf(`{
+		"operationName": "VideoCommentsByOffsetOrCursor",
+		"variables":{
+			"videoID": "%s",
+			"contentOffsetSeconds": %d
+		},
+		"extensions":{
+			"persistedQuery":{
+				"version": 1,
+				"sha256Hash": "b70a3591ff0f4e0313d126c6a1502d79a1c02baebb288227c582044aa76adf6a"
+			}
+		}
+	}`, vodID, offset)
+
+	return c.fetchChatComments(body)
+}
+
+// FetchNextComments fetches the next page of chat comments using a cursor
+func (c *Client) FetchNextComments(vodID string, cursor string) (*ChatResponse, error) {
+	body := fmt.Sprintf(`{
+		"operationName": "VideoCommentsByOffsetOrCursor",
+		"variables":{
+			"videoID": "%s",
+			"cursor": "%s"
+		},
+		"extensions":{
+			"persistedQuery":{
+				"version": 1,
+				"sha256Hash": "b70a3591ff0f4e0313d126c6a1502d79a1c02baebb288227c582044aa76adf6a"
+			}
+		}
+	}`, vodID, cursor)
+
+	return c.fetchChatComments(body)
+}
+
+// fetchChatComments is the internal method that performs the GQL request for chat comments
+func (c *Client) fetchChatComments(body string) (*ChatResponse, error) {
+	req := c.httpClient.R().
+		SetHeader("Client-ID", GQLClientId).
+		SetHeader("Origin", "https://twitch.tv").
+		SetHeader("Referer", "https://twitch.tv").
+		SetHeader("Content-Type", "text/plain;charset=UTF-8").
+		SetHeader("Accept", "*/*").
+		SetBody([]byte(body))
+
+	var response ChatResponse
+	resp, err := req.Post(TwitchGQLAPI)
+
+	if err != nil {
+		if c.metrics != nil {
+			c.metrics.RecordGQLCall(false)
+		}
+		return nil, fmt.Errorf("failed to fetch chat comments: %w", err)
+	}
+
+	if resp.IsError() {
+		if c.metrics != nil {
+			c.metrics.RecordGQLCall(false)
+		}
+		return nil, &APIError{StatusCode: resp.StatusCode(), Body: string(resp.Body())}
+	}
+
+	if c.metrics != nil {
+		c.metrics.RecordGQLCall(true)
+	}
+
+	if err := json.Unmarshal(resp.Body(), &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal chat response: %w", err)
+	}
+
+	return &response, nil
+}
