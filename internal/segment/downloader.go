@@ -29,7 +29,10 @@ type SessionMetadata struct {
 }
 
 const (
-	MetadataFileName = "current_session.json"
+	MetadataFileName   = "current_session.json"
+	MaxDownloadRetries = 5
+	DownloadTimeout    = 60 * time.Second
+	SegmentReadTimeout = 30 * time.Second
 )
 
 type SegmentInfo struct {
@@ -38,18 +41,19 @@ type SegmentInfo struct {
 }
 
 type SegmentDownloader struct {
-	sessionDir  string
-	channel     string
-	seen        map[string]bool
-	segments    []SegmentInfo
-	mu          sync.Mutex
-	downloaded  int
-	totalSize   int64
-	metrics     *metrics.Metrics
-	format      string // "ts" or "mp4"
-	initSegment string
-	fileCounter int
-	counterMu   sync.Mutex
+	sessionDir        string
+	channel           string
+	seen              map[string]bool
+	segments          []SegmentInfo
+	mu                sync.Mutex
+	downloaded        int
+	totalSize         int64
+	metrics           *metrics.Metrics
+	format            string // "ts" or "mp4"
+	initSegment       string
+	fileCounter       int
+	counterMu         sync.Mutex
+	lastDownloadedSeq int
 }
 
 func NewSegmentDownloader(vodDirectory, channel string, timestamp time.Time) *SegmentDownloader {
@@ -81,17 +85,28 @@ func NewSegmentDownloaderFromSession(sessionDir string) *SegmentDownloader {
 		log.Warnf("Failed to load session metadata: %v", err)
 	}
 
+	highestOnDisk := sd.scanForHighestFileNumber()
+
 	if metadata != nil {
 		sd.channel = metadata.Channel
 		sd.fileCounter = metadata.FileCounter
 		if metadata.Format != "" {
 			sd.format = metadata.Format
 		}
-		log.InfofC(sd.channel, "Restored session state: fileCounter=%d, lastSeq=%d", sd.fileCounter, metadata.LastSeq)
+
+		trueLastSeq := metadata.LastSeq
+		if highestOnDisk > trueLastSeq {
+			trueLastSeq = highestOnDisk
+			log.InfofC(sd.channel, "Disk scan found higher segment (%d) than metadata (%d), using disk value", highestOnDisk, metadata.LastSeq)
+		}
+
+		sd.lastDownloadedSeq = trueLastSeq
+		log.InfofC(sd.channel, "Restored session state: fileCounter=%d, lastSeq=%d", sd.fileCounter, trueLastSeq)
 	} else {
-		sd.fileCounter = sd.scanForHighestFileNumber()
+		sd.fileCounter = highestOnDisk
+		sd.lastDownloadedSeq = highestOnDisk
 		sd.format = sd.DetectFormatFromFiles()
-		log.Infof("Scanned session directory: fileCounter=%d, format=%s", sd.fileCounter, sd.format)
+		log.Infof("Scanned session directory: fileCounter=%d, lastSeq=%d, format=%s", sd.fileCounter, highestOnDisk, sd.format)
 	}
 
 	sd.cleanupTempFiles()
@@ -170,25 +185,35 @@ func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string, ba
 }
 
 func (sd *SegmentDownloader) downloadSegmentInternal(ctx context.Context, url string, seqNum int, batchSize int) error {
-	maxRetries := 5
 	var lastErr error
 	startTime := time.Now()
 
-	for attempt := 0; attempt < maxRetries; attempt++ {
+	client := &http.Client{
+		Timeout: DownloadTimeout,
+	}
+
+	for attempt := 0; attempt < MaxDownloadRetries; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
-		resp, err := http.Get(url)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
-			lastErr = fmt.Errorf("failed to request segment (attempt %d/%d): %w", attempt+1, maxRetries, err)
+			lastErr = fmt.Errorf("failed to create request (attempt %d/%d): %w", attempt+1, MaxDownloadRetries, err)
+			sd.sleepWithBackoff(attempt)
+			continue
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to request segment (attempt %d/%d): %w", attempt+1, MaxDownloadRetries, err)
 			sd.sleepWithBackoff(attempt)
 			continue
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
-			lastErr = fmt.Errorf("unexpected status code %d (attempt %d/%d)", resp.StatusCode, attempt+1, maxRetries)
+			lastErr = fmt.Errorf("unexpected status code %d (attempt %d/%d)", resp.StatusCode, attempt+1, MaxDownloadRetries)
 			sd.sleepWithBackoff(attempt)
 			continue
 		}
@@ -227,6 +252,9 @@ func (sd *SegmentDownloader) downloadSegmentInternal(ctx context.Context, url st
 		sd.downloaded++
 		sd.totalSize += written
 		sd.seen[url] = true
+		if seqNum > sd.lastDownloadedSeq {
+			sd.lastDownloadedSeq = seqNum
+		}
 		sd.mu.Unlock()
 
 		duration := time.Since(startTime)
@@ -302,6 +330,12 @@ func (sd *SegmentDownloader) GetFormat() string {
 
 func (sd *SegmentDownloader) GetInitSegment() string {
 	return sd.initSegment
+}
+
+func (sd *SegmentDownloader) GetLastDownloadedSeq() int {
+	sd.mu.Lock()
+	defer sd.mu.Unlock()
+	return sd.lastDownloadedSeq
 }
 
 func (sd *SegmentDownloader) CleanupOnError() {

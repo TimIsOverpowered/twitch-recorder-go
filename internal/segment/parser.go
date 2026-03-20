@@ -108,6 +108,7 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 		pp.mu.Unlock()
 
 		highestAddedSeq := lastSeq
+		skippedCount := 0
 
 		for i, segment := range mediaPlaylist.Segments {
 			if segment == nil || segment.URI == "" {
@@ -119,7 +120,7 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 
 			// Skip if this segment was already downloaded
 			if segmentSeq <= lastSeq {
-				log.DebugfC(pp.downloader.channel, "Skipping already-downloaded segment: seq=%d", segmentSeq)
+				skippedCount++
 				continue
 			}
 
@@ -133,6 +134,10 @@ func (pp *PlaylistParser) FetchNewSegments(ctx context.Context, m3u8URL string) 
 			}
 
 			log.DebugfC(pp.downloader.channel, "New segment found: seq=%d, url=%s", segmentSeq, segment.URI[:min(50, len(segment.URI))])
+		}
+
+		if skippedCount > 0 {
+			log.DebugfC(pp.downloader.channel, "Skipped %d already-downloaded segments", skippedCount)
 		}
 
 		// Update lastSeq to the highest sequence number we actually added

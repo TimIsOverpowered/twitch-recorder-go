@@ -9,26 +9,27 @@ import (
 )
 
 func isIncompleteSession(sessionDir string) bool {
-	tsFiles, _ := filepath.Glob(filepath.Join(sessionDir, "*.ts"))
-	mp4Segments, _ := filepath.Glob(filepath.Join(sessionDir, "*.mp4"))
+	metadataPath := filepath.Join(filepath.Dir(sessionDir), "current_session.json")
 
-	allSegments := len(tsFiles) + len(mp4Segments)
-	if allSegments == 0 {
+	if _, err := os.Stat(metadataPath); os.IsNotExist(err) {
 		return false
 	}
 
-	files, _ := os.ReadDir(sessionDir)
-	for _, f := range files {
-		if !f.IsDir() && filepath.Ext(f.Name()) == ".mp4" {
-			baseName := strings.TrimSuffix(f.Name(), ".mp4")
-			if _, err := fmt.Sscanf(baseName, "%d", new(int)); err == nil {
-				continue
-			}
+	tsFiles, _ := filepath.Glob(filepath.Join(sessionDir, "*.ts"))
+
+	if len(tsFiles) == 0 {
+		return false
+	}
+
+	mp4Files, _ := filepath.Glob(filepath.Join(sessionDir, "*.mp4"))
+	for _, f := range mp4Files {
+		baseName := strings.TrimSuffix(filepath.Base(f), ".mp4")
+		if _, err := fmt.Sscanf(baseName, "%d", new(int)); err != nil {
 			return false
 		}
 	}
 
-	return allSegments > 0
+	return true
 }
 
 func IsSessionDirectory(name string, channel string) bool {

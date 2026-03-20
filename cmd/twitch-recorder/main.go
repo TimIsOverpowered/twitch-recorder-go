@@ -28,6 +28,7 @@ var (
 	recorders            map[string]*recorder.Recorder
 	recordersMu          sync.RWMutex
 	testFinalizationDone chan struct{}
+	closeOnce            sync.Once
 )
 
 func init() {
@@ -110,7 +111,7 @@ func main() {
 				recordersMu.Unlock()
 			} else if err == recorder.ErrTestFinalized {
 				log.Infof("[TEST] Test finalization completed for %s, exiting...", ch)
-				close(testFinalizationDone)
+				closeOnce.Do(func() { close(testFinalizationDone) })
 			}
 		}(channel)
 	}
@@ -127,7 +128,7 @@ func main() {
 
 	recordersMu.RLock()
 	for _, rec := range recorders {
-		rec.WaitForUploads(5 * time.Minute)
+		rec.WaitForUploads(recorder.FinalizeTimeout)
 	}
 	recordersMu.RUnlock()
 
@@ -166,7 +167,7 @@ func createTwitchClient(c *config.Config) *twitch.Client {
 		clientSecret = config.GetTwitchClientSecret()
 	}
 
-	return twitch.NewClient(clientID, clientSecret, c.Twitch.OAuthKey, httpClient)
+	return twitch.NewClientWithRateLimit(clientID, clientSecret, c.Twitch.OAuthKey, httpClient, c.Twitch.RateLimitMaxTokens, c.Twitch.RateLimitRefillMs)
 }
 
 func overrideWithEnv(cfgVal, envVal string) string {
@@ -259,9 +260,10 @@ func generateDefaultConfig(configPath string) error {
     }
   },
   "archive": {
-    // ARCHIVE API INTEGRATION (OPTIONAL) - See docs for details
+    "_comment": "ARCHIVE API INTEGRATION (OPTIONAL) - See docs for details",
     "enabled": false,
-    "endpoint": "", // Supports {channel} placeholder, e.g.: "https://archive.overpowered.tv/{channel}/v2/live"
+    "endpoint": "",
+    "_endpoint_note": "Supports {channel} placeholder, e.g.: https://archive.overpowered.tv/{channel}/v2/live",
     "key": ""
   }
 }`

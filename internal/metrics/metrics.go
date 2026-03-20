@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+const maxDownloadDurations = 1000
+
 type Metrics struct {
 	mu sync.Mutex
 
@@ -66,6 +68,10 @@ func (m *Metrics) RecordSegmentDownload(size int64, duration time.Duration) {
 
 	m.segmentsDownloaded++
 	m.bytesDownloaded += size
+
+	if len(m.downloadDurations) >= maxDownloadDurations {
+		m.downloadDurations = m.downloadDurations[1:]
+	}
 	m.downloadDurations = append(m.downloadDurations, duration)
 }
 

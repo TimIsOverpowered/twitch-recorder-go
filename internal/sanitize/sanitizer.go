@@ -3,12 +3,23 @@ package sanitize
 import (
 	"regexp"
 	"strings"
+
+	"twitch-recorder-go/internal/log"
 )
 
 var invalidPathChars = regexp.MustCompile(`[<>:"/\\|?*]`)
 
 func SanitizeChannelName(name string) string {
 	name = strings.TrimSpace(name)
+
+	if len(name) == 0 {
+		return "unknown"
+	}
+
+	if strings.Contains(name, "..") || strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		log.Warnf("Potential path traversal detected in channel name: %s", name)
+		return "unknown"
+	}
 
 	name = invalidPathChars.ReplaceAllString(name, "_")
 

@@ -29,6 +29,11 @@ const (
 	GQLClientId     = "kd1unb4b3q4t58fwlpcbzcbnm76a8fp"
 )
 
+var (
+	ErrUserNotFound   = errors.New("user not found")
+	ErrStreamNotFound = errors.New("stream not found")
+)
+
 type Client struct {
 	httpClient        *resty.Client
 	clientID          string
@@ -45,12 +50,16 @@ type Client struct {
 }
 
 func NewClient(clientID, clientSecret, oauthKey string, httpClient *resty.Client) *Client {
+	return NewClientWithRateLimit(clientID, clientSecret, oauthKey, httpClient, 150, 400*time.Millisecond)
+}
+
+func NewClientWithRateLimit(clientID, clientSecret, oauthKey string, httpClient *resty.Client, maxTokens int, refillRate time.Duration) *Client {
 	return &Client{
 		httpClient:   httpClient,
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		oauthKey:     oauthKey,
-		rateLimiter:  ratelimit.NewLimiter(150, 400*time.Millisecond),
+		rateLimiter:  ratelimit.NewLimiter(maxTokens, refillRate),
 		tokenCache:   make(map[string]*CachedToken),
 	}
 }
@@ -108,7 +117,7 @@ func (c *Client) GetUser(ctx context.Context, login string) (*User, error) {
 	}
 
 	if len(response.Data) == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("%w: %s", ErrUserNotFound, login)
 	}
 
 	return &response.Data[0], nil
@@ -153,19 +162,33 @@ func (c *Client) GetStreams(ctx context.Context, userLogin string) (*Streams, er
 		c.metrics.RecordAPICall(true, 1)
 	}
 
+	if len(response.Data) == 0 {
+		return &response, fmt.Errorf("%w: %s", ErrStreamNotFound, userLogin)
+	}
+
 	return &response, nil
 }
 
 func (c *Client) RefreshToken(ctx context.Context) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.isRefreshingToken {
+		c.mu.Unlock()
 		return nil
 	}
-
 	c.isRefreshingToken = true
-	defer func() { c.isRefreshingToken = false }()
+	c.mu.Unlock()
+
+	defer func() {
+		c.mu.Lock()
+		c.isRefreshingToken = false
+		c.mu.Unlock()
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 
 	c.rateLimiter.Wait()
 
@@ -307,14 +330,14 @@ func (c *Client) GetLiveTokenSig(ctx context.Context, channel string) (*TokenSig
 var ErrInvalidUser = errors.New("user is invalid or does not exist")
 
 func (c *Client) GetCachedToken(ctx context.Context, channel string) (*CachedToken, error) {
-	c.tokenCacheMu.RLock()
+	c.tokenCacheMu.Lock()
 	cached, ok := c.tokenCache[channel]
-	c.tokenCacheMu.RUnlock()
-
 	if ok && time.Now().Before(cached.ExpiresAt) {
+		c.tokenCacheMu.Unlock()
 		log.Debugf("Token expires in: %v", time.Until(cached.ExpiresAt))
 		return cached, nil
 	}
+	c.tokenCacheMu.Unlock()
 
 	log.Infof("Fetching new token for channel %s", channel)
 	tokenSig, err := c.GetLiveTokenSig(ctx, channel)

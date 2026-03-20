@@ -20,21 +20,32 @@ import (
 	"twitch-recorder-go/internal/twitch"
 )
 
+const (
+	CheckTickerInterval = 6 * time.Second
+	StreamCheckTimeout  = 30 * time.Second
+	FinalizeTimeout     = 5 * time.Minute
+	MaxStreamFailures   = 3
+	RetryDelay          = 5 * time.Second
+	DownloadConcurrency = 4
+)
+
 var (
 	ErrInvalidUser   = errors.New("user is invalid or does not exist")
 	ErrTestFinalized = errors.New("test finalization completed")
 )
 
 type Recorder struct {
-	twitchClient  *twitch.Client
-	channel       string
-	metrics       *metrics.Metrics
-	config        *config.Config
-	uploadToDrive bool
-	uploadWG      sync.WaitGroup
-	failureCount  int
-	maxFailures   int
-	mu            sync.Mutex
+	twitchClient    *twitch.Client
+	channel         string
+	metrics         *metrics.Metrics
+	config          *config.Config
+	uploadToDrive   bool
+	uploadWG        sync.WaitGroup
+	failureCount    int
+	maxFailures     int
+	finalizeCancels []context.CancelFunc
+	mu              sync.Mutex
+	finalizeMu      sync.Mutex
 }
 
 func NewRecorder(twitchClient *twitch.Client, channel string, cfg *config.Config, uploadToDrive bool) *Recorder {
@@ -43,7 +54,7 @@ func NewRecorder(twitchClient *twitch.Client, channel string, cfg *config.Config
 		channel:       channel,
 		config:        cfg,
 		uploadToDrive: uploadToDrive,
-		maxFailures:   3,
+		maxFailures:   MaxStreamFailures,
 	}
 }
 
@@ -66,6 +77,15 @@ func (r *Recorder) SetMetrics(m *metrics.Metrics) {
 	r.metrics = m
 }
 
+func (r *Recorder) Shutdown() {
+	r.finalizeMu.Lock()
+	defer r.finalizeMu.Unlock()
+	for _, cancel := range r.finalizeCancels {
+		cancel()
+	}
+	r.finalizeCancels = nil
+}
+
 func (r *Recorder) MonitorChannel(ctx context.Context) error {
 	if err := r.checkAndRecord(ctx); err != nil {
 		if err == ErrInvalidUser || err == ErrTestFinalized {
@@ -74,7 +94,7 @@ func (r *Recorder) MonitorChannel(ctx context.Context) error {
 		log.Errorf("Error checking channel %s: %v", r.channel, err)
 	}
 
-	ticker := time.NewTicker(6 * time.Second)
+	ticker := time.NewTicker(CheckTickerInterval)
 	defer ticker.Stop()
 
 	for {
@@ -135,7 +155,7 @@ func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 		r.metrics.RecordRecordingStart()
 	}
 
-	streamIDCtx, streamIDCancel := context.WithTimeout(ctx, 30*time.Second)
+	streamIDCtx, streamIDCancel := context.WithTimeout(ctx, StreamCheckTimeout)
 	defer streamIDCancel()
 
 	streamIDChan := make(chan string, 1)
@@ -147,7 +167,6 @@ func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 	}
 
 	initSegmentDownloaded := false
-	metadataSaved := false
 
 	for {
 		select {
@@ -167,7 +186,7 @@ func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 
 		if err := parser.FetchNewSegments(ctx, m3u8URL); err != nil {
 			log.ErrorfC(r.channel, "Error fetching playlist: %v", err)
-			time.Sleep(5 * time.Second)
+			time.Sleep(RetryDelay)
 			continue
 		}
 
@@ -201,9 +220,9 @@ func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 						resp.Body.Close()
 						log.ErrorfC(r.channel, "Failed to create init file: %v", err)
 					} else {
+						defer out.Close()
+						defer resp.Body.Close()
 						_, err = io.Copy(out, resp.Body)
-						out.Close()
-						resp.Body.Close()
 						if err != nil {
 							log.ErrorfC(r.channel, "Failed to write init segment: %v", err)
 						} else {
@@ -216,19 +235,20 @@ func (r *Recorder) recordStream(ctx context.Context, m3u8URL string) error {
 			}
 		}
 
-		downloader.DownloadQueuedSegments(ctx, 4)
+		downloader.DownloadQueuedSegments(ctx, DownloadConcurrency)
 
-		if streamID != "" && !metadataSaved {
-			lastSeq := parser.GetLastSeq()
-			if err := downloader.SaveSessionMetadataAfterDownload(streamID, m3u8URL, lastSeq); err != nil {
-				log.WarnfC(r.channel, "Failed to save session metadata: %v", err)
-			} else {
-				metadataSaved = true
-				log.DebugfC(r.channel, "Initial metadata saved with stream_id=%s, lastSeq=%d", streamID, lastSeq)
+		if streamID != "" {
+			lastSeq := downloader.GetLastDownloadedSeq()
+			if lastSeq > 0 {
+				if err := downloader.SaveSessionMetadataAfterDownload(streamID, m3u8URL, lastSeq); err != nil {
+					log.WarnfC(r.channel, "Failed to save session metadata: %v", err)
+				} else {
+					log.DebugfC(r.channel, "Saved metadata with stream_id=%s, lastSeq=%d", streamID, lastSeq)
+				}
 			}
 		}
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(RetryDelay)
 	}
 }
 
@@ -251,7 +271,7 @@ func (r *Recorder) getCurrentStreamIDWithRetry(ctx context.Context, streamIDChan
 			}
 		}
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(RetryDelay)
 	}
 }
 
@@ -324,6 +344,11 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 
 	outputFile := fmt.Sprintf("%s/%s.mp4", sessionDir, folderName)
 
+	_, cancel := context.WithCancel(context.Background())
+	r.finalizeMu.Lock()
+	r.finalizeCancels = append(r.finalizeCancels, cancel)
+	r.finalizeMu.Unlock()
+
 	resultChan, _ := downloader.FinalizeAsync(outputFile)
 
 	r.uploadWG.Add(1)
@@ -370,7 +395,7 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 		}
 
 		if !isTest && r.config.Archive.Enabled && r.config.Archive.Endpoint != "" && r.config.Archive.Key != "" {
-			success := api.PostRecording(r.config.Archive.Endpoint, r.config.Archive.Key, r.channel, streamID, result.OutputFile, duration)
+			success := api.PostRecordingWithContext(context.Background(), r.config.Archive.Endpoint, r.config.Archive.Key, r.channel, streamID, result.OutputFile, duration)
 			if r.metrics != nil {
 				r.metrics.RecordArchiveAPICall(success)
 			}

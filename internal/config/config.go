@@ -8,9 +8,11 @@ import (
 
 type Config struct {
 	Twitch struct {
-		ClientID     string `json:"client_id"`
-		ClientSecret string `json:"client_secret"`
-		OAuthKey     string `json:"oauth_key"`
+		ClientID           string        `json:"client_id"`
+		ClientSecret       string        `json:"client_secret"`
+		OAuthKey           string        `json:"oauth_key"`
+		RateLimitMaxTokens int           `json:"rate_limit_max_tokens"`
+		RateLimitRefillMs  time.Duration `json:"rate_limit_refill_ms"`
 	} `json:"twitch"`
 	VodDirectory string   `json:"vod_directory"`
 	Channels     []string `json:"channels"`
@@ -52,6 +54,13 @@ func LoadConfig(configPath string) (*Config, error) {
 	config := &Config{}
 	if err := json.Unmarshal(data, config); err != nil {
 		return nil, err
+	}
+
+	if config.Twitch.RateLimitMaxTokens == 0 {
+		config.Twitch.RateLimitMaxTokens = 150
+	}
+	if config.Twitch.RateLimitRefillMs == 0 {
+		config.Twitch.RateLimitRefillMs = 400 * time.Millisecond
 	}
 
 	return config, nil

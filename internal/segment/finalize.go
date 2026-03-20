@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,11 @@ import (
 	"strings"
 
 	"twitch-recorder-go/internal/log"
+)
+
+const (
+	MaxSegmentSize = 500 * 1024 * 1024       // 500 MB per segment
+	MaxFinalSize   = 50 * 1024 * 1024 * 1024 // 50 GB final file
 )
 
 func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
@@ -31,6 +37,24 @@ func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
 
 	if len(segmentFiles) == 0 {
 		return fmt.Errorf("no segment files found in session directory")
+	}
+
+	totalSize := int64(0)
+	for _, seg := range segmentFiles {
+		info, err := os.Stat(seg)
+		if err != nil {
+			return fmt.Errorf("failed to stat segment %s: %w", seg, err)
+		}
+
+		if info.Size() > MaxSegmentSize {
+			return fmt.Errorf("segment %s exceeds maximum size (%d bytes)", seg, MaxSegmentSize)
+		}
+
+		totalSize += info.Size()
+	}
+
+	if totalSize > MaxFinalSize {
+		return fmt.Errorf("total segment size %d exceeds maximum final file size", totalSize)
 	}
 
 	sort.Slice(segmentFiles, func(i, j int) bool {
@@ -91,11 +115,18 @@ func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
 	} else {
 		cmd = exec.Command("ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", "-output_ts_offset", "0", "-movflags", "+faststart", outputFile)
 	}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ffmpeg failed: %w", err)
+		log.ErrorfC(sd.channel, "FFmpeg stderr: %s", stderrBuf.String())
+		return fmt.Errorf("ffmpeg failed: %w (output: %s)", err, strings.TrimSpace(stderrBuf.String()))
+	}
+
+	if len(stdoutBuf.Bytes()) > 0 {
+		log.DebugfC(sd.channel, "FFmpeg output: %s", stdoutBuf.String())
 	}
 
 	log.InfofC(sd.channel, "Successfully created %s", outputFile)
