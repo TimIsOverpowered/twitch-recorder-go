@@ -17,6 +17,7 @@ import (
 	"twitch-recorder-go/internal/ratelimit"
 
 	"github.com/go-resty/resty/v2"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/grafov/m3u8"
 )
 
@@ -318,7 +319,11 @@ func (c *Client) GetCachedToken(ctx context.Context, channel string) (*CachedTok
 		return nil, err
 	}
 
-	expiresAt := time.Now().Add(4 * time.Minute)
+	expiresAt, err := extractTokenExpiration(tokenSig.Data.StreamPlaybackAccessToken.Value)
+	if err != nil {
+		log.Warnf("Failed to parse token expiration, using default 4min: %v", err)
+		expiresAt = time.Now().Add(4 * time.Minute)
+	}
 
 	cachedToken := &CachedToken{
 		Value:     tokenSig.Data.StreamPlaybackAccessToken.Value,
@@ -331,6 +336,25 @@ func (c *Client) GetCachedToken(ctx context.Context, channel string) (*CachedTok
 	c.tokenCacheMu.Unlock()
 
 	return cachedToken, nil
+}
+
+func extractTokenExpiration(tokenValue string) (time.Time, error) {
+	token, _, err := jwt.NewParser().ParseUnverified(tokenValue, jwt.MapClaims{})
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to parse JWT: %w", err)
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return time.Time{}, errors.New("invalid token claims")
+	}
+
+	exp, ok := claims["exp"].(float64)
+	if !ok {
+		return time.Time{}, errors.New("exp claim not found or invalid type")
+	}
+
+	return time.Unix(int64(exp), 0), nil
 }
 
 func (c *Client) GetLiveM3U8(ctx context.Context, channel string) (string, error) {
