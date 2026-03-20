@@ -130,7 +130,7 @@ func (r *Recorder) checkAndRecord(ctx context.Context) error {
 			return nil
 		}
 
-		log.DebugfC(r.channel, "%v", err)
+		log.InfofC(r.channel, "%v", err)
 		return nil
 	}
 
