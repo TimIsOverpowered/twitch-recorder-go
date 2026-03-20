@@ -74,11 +74,6 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	log.Info("Recovering incomplete sessions...")
-	recoverStart := time.Now()
-	segment.RecoverIncompleteSessions(c.VodDirectory, c.Channels)
-	log.Infof("Recovery complete in %v", time.Since(recoverStart))
-
 	m := metrics.NewMetrics()
 
 	twitchClient := createTwitchClient(c)
