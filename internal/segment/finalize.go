@@ -3,6 +3,7 @@ package segment
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,8 +15,7 @@ import (
 )
 
 const (
-	MaxSegmentSize = 500 * 1024 * 1024       // 500 MB per segment
-	MaxFinalSize   = 50 * 1024 * 1024 * 1024 // 50 GB final file
+	MaxSegmentSize = 50 * 1024 * 1024 // 50 MB per segment
 )
 
 func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
@@ -53,10 +53,6 @@ func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
 		totalSize += info.Size()
 	}
 
-	if totalSize > MaxFinalSize {
-		return fmt.Errorf("total segment size %d exceeds maximum final file size", totalSize)
-	}
-
 	sort.Slice(segmentFiles, func(i, j int) bool {
 		nameI := filepath.Base(segmentFiles[i])
 		nameJ := filepath.Base(segmentFiles[j])
@@ -66,29 +62,6 @@ func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
 		idxJ, _ := strconv.Atoi(numJ)
 		return idxI < idxJ
 	})
-
-	var filteredSegments []string
-	for _, segFile := range segmentFiles {
-		if filepath.Base(segFile) != "init.mp4" {
-			filteredSegments = append(filteredSegments, segFile)
-		}
-	}
-	segmentFiles = filteredSegments
-
-	if sd.format == "mp4" && sd.initSegment != "" {
-		log.InfofC(sd.channel, "Prepending init segment to %d media segments", len(segmentFiles))
-
-		initPath := filepath.Join(sessionDir, sd.initSegment)
-		initSavePath := filepath.Join(sessionDir, "init.mp4")
-
-		if err := os.Rename(initPath, initSavePath); err != nil {
-			log.WarnfC(sd.channel, "Failed to rename init segment: %v", err)
-		} else {
-			log.DebugfC(sd.channel, "Saved init segment as init.mp4")
-			initFile := filepath.Join(sessionDir, "init.mp4")
-			segmentFiles = append([]string{initFile}, segmentFiles...)
-		}
-	}
 
 	concatFile := filepath.Join(sessionDir, "segments.txt")
 	f, err := os.Create(concatFile)
@@ -110,8 +83,31 @@ func (sd *SegmentDownloader) finalizeInternal(outputFile string) error {
 
 	var cmd *exec.Cmd
 	if sd.format == "mp4" {
-		concatArg := "concat:" + strings.Join(segmentFiles, "|")
-		cmd = exec.Command("ffmpeg", "-y", "-i", concatArg, "-c", "copy", "-avoid_negative_ts", "make_zero", "-fflags", "+genpts", "-movflags", "+faststart", outputFile)
+		cmd = exec.Command("ffmpeg",
+			"-y",
+			"-i", "pipe:0",
+			"-c", "copy",
+			"-avoid_negative_ts", "make_zero",
+			"-fflags", "+genpts",
+			"-movflags", "+faststart",
+			outputFile,
+		)
+
+		pr, pw := io.Pipe()
+		cmd.Stdin = pr
+
+		go func() {
+			defer pw.Close()
+			for _, segFile := range segmentFiles {
+				f, err := os.Open(segFile)
+				if err != nil {
+					pw.CloseWithError(err)
+					return
+				}
+				io.Copy(pw, f)
+				f.Close()
+			}
+		}()
 	} else {
 		cmd = exec.Command("ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", "-output_ts_offset", "0", "-movflags", "+faststart", outputFile)
 	}
