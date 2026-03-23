@@ -150,7 +150,10 @@ func main() {
 			os.Exit(1)
 		}
 
-		fileInfo, err := os.Stat(outputFile)
+		sessionParentDir := filepath.Dir(incompleteSession)
+		finalOutputPath := filepath.Join(sessionParentDir, folderName, fmt.Sprintf("%s.mp4", folderName))
+
+		fileInfo, err := os.Stat(finalOutputPath)
 		if err == nil {
 			log.Infof("[TEST] Finalization successful - Output size: %.2f MB (%d bytes)", float64(fileInfo.Size())/1024/1024, fileInfo.Size())
 
@@ -160,8 +163,13 @@ func main() {
 			} else {
 				log.Infof("[TEST] Session cleanup verified (metadata removed)")
 			}
+
+			renamedPath := filepath.Join(sessionParentDir, folderName)
+			if _, dirErr := os.Stat(renamedPath); !os.IsNotExist(dirErr) {
+				log.Infof("[TEST] Directory renamed to: %s", folderName)
+			}
 		} else {
-			log.Errorf("[TEST] Output file verification failed: %v", err)
+			log.Errorf("[TEST] Output file verification failed at expected location (%s): %v", finalOutputPath, err)
 			os.Exit(1)
 		}
 
