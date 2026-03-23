@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,6 +29,7 @@ var (
 	uploadToDrive        bool
 	testFinalizeAfter    int
 	testChatLogs         string
+	testFinalizeFolder   string
 	httpClient           *resty.Client
 	recorders            map[string]*recorder.Recorder
 	recordersMu          sync.RWMutex
@@ -60,6 +63,7 @@ func main() {
 	flag.StringVar(&logLevel, "loglevel", "info", "Log level: error, warn, info, debug")
 	flag.IntVar(&testFinalizeAfter, "test-finalize-after", 0, "[TESTING] Force finalization after N seconds (default: 10)")
 	flag.StringVar(&testChatLogs, "test-chat-logs", "", "[TESTING] Fetch chat logs for a specific stream_id (e.g., \"2234567890\")")
+	flag.StringVar(&testFinalizeFolder, "test-finalize-folder", "", "[TESTING] Finalize incomplete session folder for channel (e.g., \"ninja\")")
 	flag.Parse()
 
 	log.Init(logLevel)
@@ -103,6 +107,65 @@ func main() {
 			os.Exit(1)
 		}
 		log.Infof("[TEST] Chat logs test completed")
+		os.Exit(0)
+	}
+
+	if testFinalizeFolder != "" {
+		log.Infof("[TEST] Finding incomplete session for channel=%s", testFinalizeFolder)
+
+		incompleteSession, err := segment.FindIncompleteSession(c.VodDirectory, testFinalizeFolder)
+		if err != nil {
+			log.Errorf("[TEST] Failed to find incomplete session: %v", err)
+			os.Exit(1)
+		}
+
+		if incompleteSession == "" {
+			log.Errorf("[TEST] No incomplete session found for channel=%s in directory=%s", testFinalizeFolder, c.VodDirectory)
+			os.Exit(1)
+		}
+
+		log.Infof("[TEST] Found incomplete session: %s", incompleteSession)
+
+		downloader := segment.NewSegmentDownloaderFromSession(incompleteSession)
+		metadata, err := downloader.LoadSessionMetadata()
+		if err != nil {
+			log.Warnf("[TEST] Failed to load metadata: %v", err)
+		} else {
+			log.Infof("[TEST] Session details - stream_id=%s, last_seq=%d, format=%s", metadata.StreamID, metadata.LastSeq, metadata.Format)
+		}
+
+		folderName := testFinalizeFolder
+		if metadata != nil && metadata.StreamID != "" {
+			folderName = metadata.StreamID
+		} else if baseDir := filepath.Base(incompleteSession); !strings.Contains(baseDir, "_") {
+			folderName = baseDir
+		}
+
+		outputFile := fmt.Sprintf("%s/%s.mp4", incompleteSession, folderName)
+
+		log.Infof("[TEST] Finalizing to: %s", outputFile)
+
+		if err := downloader.Finalize(outputFile); err != nil {
+			log.Errorf("[TEST] Failed to finalize recording: %v", err)
+			os.Exit(1)
+		}
+
+		fileInfo, err := os.Stat(outputFile)
+		if err == nil {
+			log.Infof("[TEST] Finalization successful - Output size: %.2f MB (%d bytes)", float64(fileInfo.Size())/1024/1024, fileInfo.Size())
+
+			metadataPath := filepath.Join(incompleteSession, "current_session.json")
+			if _, checkErr := os.Stat(metadataPath); !os.IsNotExist(checkErr) {
+				log.Warnf("[TEST] Metadata file still exists - session may not be fully cleaned up")
+			} else {
+				log.Infof("[TEST] Session cleanup verified (metadata removed)")
+			}
+		} else {
+			log.Errorf("[TEST] Output file verification failed: %v", err)
+			os.Exit(1)
+		}
+
+		log.Infof("[TEST] Finalization test completed successfully")
 		os.Exit(0)
 	}
 

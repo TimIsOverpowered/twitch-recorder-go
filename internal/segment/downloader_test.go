@@ -101,7 +101,7 @@ func TestDownloadSegmentSuccess(t *testing.T) {
 
 	sd := NewSegmentDownloader(tempDir, "test", time.Now())
 
-	err = sd.DownloadSegment(context.Background(), server.URL, 1)
+	err = sd.DownloadSegment(context.Background(), server.URL)
 
 	assert.NoError(t, err)
 	assert.Equal(t, 1, sd.GetDownloadedCount())
@@ -126,7 +126,7 @@ func TestDownloadSegmentRetry(t *testing.T) {
 
 	sd := NewSegmentDownloader(tempDir, "test", time.Now())
 
-	err = sd.DownloadSegment(context.Background(), server.URL, 1)
+	err = sd.DownloadSegment(context.Background(), server.URL)
 
 	assert.NoError(t, err)
 	assert.Equal(t, 3, attempts)
@@ -144,7 +144,7 @@ func TestDownloadSegmentMaxRetries(t *testing.T) {
 
 	sd := NewSegmentDownloader(tempDir, "test", time.Now())
 
-	err = sd.DownloadSegment(context.Background(), server.URL, 1)
+	err = sd.DownloadSegment(context.Background(), server.URL)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "attempt 5/5")
@@ -160,7 +160,7 @@ func TestDownloadSegmentCancel(t *testing.T) {
 
 	sd := NewSegmentDownloader(tempDir, "test", time.Now())
 
-	err = sd.DownloadSegment(ctx, "http://example.com/segment.ts", 1)
+	err = sd.DownloadSegment(ctx, "http://example.com/segment.ts")
 
 	assert.Error(t, err)
 }
@@ -178,7 +178,7 @@ func TestDownloadSegmentCreatesDirectory(t *testing.T) {
 
 	sd := NewSegmentDownloader(tempDir, "test", time.Now())
 
-	err = sd.DownloadSegment(context.Background(), server.URL, 1)
+	err = sd.DownloadSegment(context.Background(), server.URL)
 
 	assert.NoError(t, err)
 	_, err = os.Stat(sd.sessionDir)
@@ -248,7 +248,7 @@ func TestDownloadSegmentContextCancellationDuringDownload(t *testing.T) {
 	cancel()
 
 	start := time.Now()
-	err = sd.DownloadSegment(ctx, server.URL, 1)
+	err = sd.DownloadSegment(ctx, server.URL)
 	elapsed := time.Since(start)
 
 	assert.Error(t, err)
@@ -279,7 +279,7 @@ func TestDownloadSegmentSlowContextCancellation(t *testing.T) {
 	}()
 
 	start := time.Now()
-	err = sd.DownloadSegment(ctx, server.URL, 1)
+	err = sd.DownloadSegment(ctx, server.URL)
 	elapsed := time.Since(start)
 
 	assert.Error(t, err)

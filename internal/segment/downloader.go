@@ -160,7 +160,7 @@ func (sd *SegmentDownloader) DownloadQueuedSegments(ctx context.Context, concurr
 			defer wg.Done()
 			defer func() { <-semaphore }()
 
-			if err := sd.DownloadSegmentWithSeq(ctx, segmentInfo.URL, segmentInfo.SeqNum, batchSize); err != nil {
+			if err := sd.DownloadSegmentWithSeq(ctx, segmentInfo.URL, segmentInfo.SeqNum); err != nil {
 				log.ErrorfC(sd.channel, "Failed to download segment seq=%d: %v", segmentInfo.SeqNum, err)
 			} else {
 				batchMu.Lock()
@@ -176,15 +176,15 @@ func (sd *SegmentDownloader) DownloadQueuedSegments(ctx context.Context, concurr
 	}
 }
 
-func (sd *SegmentDownloader) DownloadSegmentWithSeq(ctx context.Context, url string, seqNum int, batchSize int) error {
-	return sd.downloadSegmentInternal(ctx, url, seqNum, batchSize)
+func (sd *SegmentDownloader) DownloadSegmentWithSeq(ctx context.Context, url string, seqNum int) error {
+	return sd.downloadSegmentInternal(ctx, url, seqNum)
 }
 
-func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string, batchSize int) error {
-	return sd.downloadSegmentInternal(ctx, url, -1, batchSize)
+func (sd *SegmentDownloader) DownloadSegment(ctx context.Context, url string) error {
+	return sd.downloadSegmentInternal(ctx, url, -1)
 }
 
-func (sd *SegmentDownloader) downloadSegmentInternal(ctx context.Context, url string, seqNum int, batchSize int) error {
+func (sd *SegmentDownloader) downloadSegmentInternal(ctx context.Context, url string, seqNum int) error {
 	var lastErr error
 	startTime := time.Now()
 

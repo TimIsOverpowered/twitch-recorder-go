@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"twitch-recorder-go/internal/config"
 	"twitch-recorder-go/internal/segment"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConfigLoadAndSave(t *testing.T) {
@@ -165,7 +166,7 @@ func TestContextCancellation(t *testing.T) {
 
 	sd := segment.NewSegmentDownloader(tempDir, "test", time.Now())
 
-	err = sd.DownloadSegment(ctx, "http://example.com/segment.ts", 1)
+	err = sd.DownloadSegment(ctx, "http://example.com/segment.ts")
 
 	assert.Error(t, err)
 }
