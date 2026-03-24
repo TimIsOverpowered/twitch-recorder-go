@@ -28,6 +28,7 @@ const (
 	MaxStreamFailures   = 3
 	RetryDelay          = 2 * time.Second
 	DownloadConcurrency = 4
+	PostFinalizeDelay   = 10 * time.Second
 )
 
 var (
@@ -421,6 +422,9 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 			}()
 		}
 	}()
+
+	//Avoid getting stale m3u8.
+	time.Sleep(PostFinalizeDelay)
 
 	if isTest {
 		return ErrTestFinalized
