@@ -383,14 +383,15 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 			r.metrics.RecordRecordingComplete(duration)
 		}
 
-		fileInfo, err := os.Stat(result.OutputFile)
+		finalPath := filepath.Join(filepath.Dir(sessionDir), folderName, folderName+".mp4")
+		fileInfo, err := os.Stat(finalPath)
 		var fileSize int64 = 0
 		if err == nil {
 			fileSize = fileInfo.Size()
 		}
 
 		if !isTest && r.uploadToDrive {
-			err := drive.UploadToDrive(r.config, r.channel, folderName, result.OutputFile)
+			err := drive.UploadToDrive(r.config, r.channel, folderName, finalPath)
 			success := err == nil
 
 			if r.metrics != nil {
@@ -416,7 +417,7 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 
 		if !isTest && r.config.Logs.Enabled && streamID != "" {
 			go func() {
-				outputDir := filepath.Dir(result.OutputFile)
+				outputDir := filepath.Join(filepath.Dir(sessionDir), folderName)
 				if err := chatlogs.FetchAndSaveChatLogs(r.config, r.twitchClient, r.channel, streamID, outputDir); err != nil {
 					log.WarnfC(r.channel, "Failed to fetch chat logs: %v", err)
 				}
