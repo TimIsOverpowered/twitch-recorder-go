@@ -7,41 +7,36 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-resty/resty/v2"
 	"twitch-recorder-go/internal/log"
+
+	"github.com/go-resty/resty/v2"
 )
 
 const maxArchiveRetries = 3
 
 type RecordingMetadata struct {
-	Channel      string  `json:"channel"`
-	StreamID     string  `json:"streamId"`
-	LocalPath    string  `json:"localPath"`
-	DurationSecs int64   `json:"durationSecs"`
-	FileSizeMB   float64 `json:"fileSizeMb"`
-	Timestamp    string  `json:"timestamp"`
+	StreamID     string `json:"streamId"`
+	Path         string `json:"path"`
+	DurationSecs int64  `json:"durationSecs"`
+	Platform     string `json:"platform"`
 }
 
-func PostRecording(endpoint, apiKey, channel, streamID, localPath string, duration time.Duration) bool {
-	return PostRecordingWithContext(context.Background(), endpoint, apiKey, channel, streamID, localPath, duration)
+func PostRecording(endpoint, apiKey, channel, streamID, path string, duration time.Duration) bool {
+	return PostRecordingWithContext(context.Background(), endpoint, apiKey, channel, streamID, path, duration)
 }
 
-func PostRecordingWithContext(ctx context.Context, endpoint, apiKey, channel, streamID, localPath string, duration time.Duration) bool {
+func PostRecordingWithContext(ctx context.Context, endpoint, apiKey, channel, streamID, path string, duration time.Duration) bool {
 	if endpoint == "" || apiKey == "" {
 		return false
 	}
 
 	actualEndpoint := processEndpointTemplate(endpoint, channel)
 
-	fileSizeMB := getFileSizeMB(localPath)
-
 	metadata := RecordingMetadata{
-		Channel:      channel,
 		StreamID:     streamID,
-		LocalPath:    localPath,
+		Path:         path,
 		DurationSecs: int64(duration.Seconds()),
-		FileSizeMB:   fileSizeMB,
-		Timestamp:    time.Now().UTC().Format(time.RFC3339),
+		Platform:     "twitch",
 	}
 
 	client := resty.New().SetTimeout(30 * time.Second)
@@ -64,9 +59,15 @@ func PostRecordingWithContext(ctx context.Context, endpoint, apiKey, channel, st
 			return true
 		}
 
+		if err != nil {
+			log.Warnf("Failed to post to API for %s (attempt %d/%d): %v", channel, attempt+1, maxArchiveRetries, err)
+		} else {
+			log.Warnf("Failed to post to API for %s (attempt %d/%d): Status %d, Body: %s", channel, attempt+1, maxArchiveRetries, resp.StatusCode(), string(resp.Body()))
+		}
+
 		if attempt < maxArchiveRetries-1 {
 			backoff := time.Duration(1<<uint(attempt)) * time.Second
-			log.Warnf("Failed to post to API for %s (attempt %d/%d): %v. Retrying in %v...", channel, attempt+1, maxArchiveRetries, err, backoff)
+			log.Warnf("Retrying in %v...", backoff)
 			time.Sleep(backoff)
 		}
 	}
