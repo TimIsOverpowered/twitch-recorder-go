@@ -405,7 +405,8 @@ func (r *Recorder) finalizeRecording(downloader *segment.SegmentDownloader, sess
 		}
 
 		if !isTest && r.config.Archive.Enabled && r.config.Archive.Endpoint != "" && r.config.Archive.Key != "" {
-			success := api.PostRecordingWithContext(context.Background(), r.config.Archive.Endpoint, r.config.Archive.Key, r.channel, streamID, result.OutputFile, duration)
+			finalPath := filepath.Join(filepath.Dir(sessionDir), folderName, folderName+".mp4")
+			success := api.PostRecordingWithContext(context.Background(), r.config.Archive.Endpoint, r.config.Archive.Key, r.channel, streamID, finalPath, duration)
 			if r.metrics != nil {
 				r.metrics.RecordArchiveAPICall(success)
 			}
